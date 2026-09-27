@@ -1,0 +1,161 @@
+@import "tailwindcss";
+
+@theme {
+  --color-cream: #fff9f0;
+  --color-cream-dark: #f7ecd9;
+  --color-leaf: #7bbe9e;
+  --color-leaf-dark: #5da882;
+  --color-sky: #8ec5e8;
+  --color-sky-dark: #6aa9d4;
+  --color-apricot: #f6b26b;
+  --color-apricot-dark: #e89a4e;
+  --color-warm: #f4d6a0;
+  --color-cocoa: #5b4b3a;
+  --color-cocoa-soft: #8a7560;
+  --color-blush: #f2a7a7;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  background-color: var(--color-cream);
+  color: var(--color-cocoa);
+  font-family:
+    "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Noto Sans SC",
+    "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Soft storybook card */
+.card {
+  background: #fffdf8;
+  border-radius: 1.25rem;
+  box-shadow: 0 2px 12px rgba(91, 75, 58, 0.08);
+  border: 1px solid rgba(91, 75, 58, 0.08);
+}
+
+.btn-primary {
+  background: var(--color-leaf);
+  color: #fff;
+  border-radius: 9999px;
+  font-weight: 600;
+  box-shadow: 0 2px 8px rgba(91, 168, 130, 0.4);
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+.btn-primary:hover {
+  background: var(--color-leaf-dark);
+}
+.btn-primary:active {
+  transform: scale(0.97);
+}
+.btn-primary:disabled {
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.btn-soft {
+  background: var(--color-cream-dark);
+  color: var(--color-cocoa);
+  border-radius: 9999px;
+  font-weight: 600;
+  transition: transform 0.08s ease, background 0.15s ease;
+}
+.btn-soft:hover {
+  background: var(--color-warm);
+}
+.btn-soft:active {
+  transform: scale(0.97);
+}
+.btn-soft:disabled {
+  opacity: 0.55;
+}
+
+.input {
+  width: 100%;
+  border-radius: 0.9rem;
+  border: 1.5px solid rgba(91, 75, 58, 0.18);
+  background: #fff;
+  padding: 0.65rem 0.9rem;
+  color: var(--color-cocoa);
+  outline: none;
+}
+.input:focus {
+  border-color: var(--color-leaf);
+  box-shadow: 0 0 0 3px rgba(123, 190, 158, 0.25);
+}
+textarea.input {
+  resize: vertical;
+}
+
+.label {
+  display: block;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--color-cocoa-soft);
+  margin-bottom: 0.25rem;
+}
+
+/* Reader hotspot overlay */
+.hotspot {
+  position: absolute;
+  border-radius: 0.35rem;
+  cursor: pointer;
+  /* transparent by default, subtle on hover (desktop) */
+  background: transparent;
+  border: 2px solid transparent;
+}
+@media (hover: hover) {
+  .hotspot:hover {
+    border-color: rgba(246, 178, 107, 0.75);
+    background: rgba(246, 178, 107, 0.12);
+  }
+}
+.hotspot-selected {
+  border-color: var(--color-apricot);
+  background: rgba(246, 178, 107, 0.22);
+  box-shadow: 0 0 0 3px rgba(246, 178, 107, 0.35);
+}
+
+/* Bottom sheet slide-up */
+@keyframes sheet-up {
+  from {
+    transform: translateY(40px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.sheet-anim {
+  animation: sheet-up 0.22s ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fade-anim {
+  animation: fade-in 0.18s ease-out;
+}
+
+@keyframes float-soft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-6px);
+  }
+}
+.float-anim {
+  animation: float-soft 4s ease-in-out infinite;
+}
