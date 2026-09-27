@@ -26,7 +26,7 @@ FROM deps AS server-build
 COPY . .
 RUN pnpm --filter @ehon2/shared build \
  && pnpm --filter @ehon2/server build \
- && pnpm --filter @ehon2/server --prod deploy /app/deploy
+ && pnpm --filter @ehon2/server --prod deploy --legacy /app/deploy
 
 # ---------- runtime ----------
 FROM node:22-bookworm-slim AS runner
