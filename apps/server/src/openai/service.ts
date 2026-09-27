@@ -153,7 +153,7 @@ export class AiService {
       });
     } catch (err) {
       if (err instanceof AiError && err.code === ErrorCodes.PAGE_ANALYSIS_FAILED) {
-        throw new AiError(ErrorCodes.COVER_ANALYSIS_FAILED, 'Cover analysis failed', err.cause);
+        throw new AiError(ErrorCodes.COVER_ANALYSIS_FAILED, `Cover analysis failed: ${err.message}`, err);
       }
       throw err;
     }
