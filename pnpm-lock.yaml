@@ -1949,6 +1949,8 @@ snapshots:
 
   graceful-fs@4.2.11: {}
 
+  heic2any@0.0.4: {}
+
   hono@4.13.9: {}
 
   jiti@2.7.0: {}
