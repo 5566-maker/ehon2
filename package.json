@@ -6,9 +6,9 @@
   "packageManager": "pnpm@10.6.0",
   "private": true,
   "scripts": {
-    "build": "pnpm --filter @ehon2/web build && pnpm --filter @ehon2/server build",
+    "build": "pnpm --filter @ehon2/shared build && pnpm --filter @ehon2/web build && pnpm --filter @ehon2/server build",
     "dev": "pnpm --parallel --filter @ehon2/server --filter @ehon2/web dev",
-    "typecheck": "pnpm -r exec tsc --noEmit -p tsconfig.json"
+    "typecheck": "pnpm --filter @ehon2/shared build && pnpm -r exec tsc --noEmit -p tsconfig.json"
   },
   "version": "0.1.0",
   "pnpm": {
