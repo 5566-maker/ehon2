@@ -54,6 +54,8 @@ export async function apiUpload<T>(path: string, form: FormData): Promise<T> {
 /** Friendly message for an unknown error (never leaks internals). */
 export function errorMessage(err: unknown): string {
   if (err instanceof ApiError) return err.message;
-  if (err instanceof Error) return '请求失败，请稍后重试。';
+  // Plain Errors thrown by client code (e.g. the HEIC conversion helper) carry
+  // user-facing messages — surface them instead of swallowing.
+  if (err instanceof Error && err.message) return err.message;
   return '请求失败，请稍后重试。';
 }

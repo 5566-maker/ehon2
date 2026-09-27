@@ -1,6 +1,7 @@
 {
   "dependencies": {
     "@ehon2/shared": "workspace:*",
+    "heic2any": "^0.0.4",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "react-router-dom": "^7.0.0"
