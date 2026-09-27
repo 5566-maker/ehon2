@@ -57,12 +57,49 @@ async function convertViaCanvas(file: File, quality: number): Promise<File> {
   }
 }
 
+/** Extract a readable message from anything a decoder might reject with. */
+function describeError(err: unknown): string {
+  if (err instanceof Error) return err.message || err.name;
+  if (typeof err === 'string') return err;
+  if (typeof err === 'object' && err !== null) {
+    // heic2any rejects with plain { code, message } objects.
+    const msg = (err as { message?: unknown }).message;
+    if (typeof msg === 'string' && msg) return msg;
+    try {
+      const json = JSON.stringify(err);
+      if (json && json !== '{}') return json;
+    } catch {
+      /* fall through */
+    }
+  }
+  return String(err);
+}
+
+type Heic2AnyFn = (opts: {
+  blob: Blob;
+  toType: string;
+  quality?: number;
+}) => Promise<Blob | Blob[]>;
+
 /** WASM decode via heic2any. Works in any modern desktop browser. */
 async function convertViaWasm(file: File, quality: number): Promise<File> {
-  const { default: heic2any } = await import('heic2any');
-  const result = await heic2any({ blob: file, toType: 'image/jpeg', quality });
+  let heic2any: Heic2AnyFn;
+  try {
+    ({ default: heic2any } = await import('heic2any'));
+  } catch (err) {
+    throw new Error(`HEIC decoder failed to load: ${describeError(err)}`);
+  }
+  if (typeof heic2any !== 'function') {
+    throw new Error('HEIC decoder failed to load: unexpected module shape');
+  }
+  let result: Blob | Blob[];
+  try {
+    result = await heic2any({ blob: file, toType: 'image/jpeg', quality });
+  } catch (err) {
+    throw new Error(`HEIC decode failed: ${describeError(err)}`);
+  }
   const blob = Array.isArray(result) ? result[0] : result;
-  if (!blob) throw new Error('conversion produced no data');
+  if (!blob) throw new Error('HEIC decode produced no data');
   return new File([blob], toJpegName(file.name), { type: 'image/jpeg' });
 }
 
@@ -84,7 +121,13 @@ export async function prepareUploadFile(file: File): Promise<File> {
   if (!isHeicFile(file)) return file;
   try {
     return await convertHeicToJpeg(file);
-  } catch {
-    throw new Error('无法读取这张 HEIC 照片，请在相册中导出为 JPEG 后再上传。');
+  } catch (err) {
+    const detail = describeError(err);
+    // Keep the technical reason visible so a failed conversion can be diagnosed
+    // from the message alone.
+    console.error('[heic] conversion failed:', detail);
+    throw new Error(
+      `无法读取这张 HEIC 照片${detail ? `（${detail}）` : ''}，请在相册中导出为 JPEG 后再上传。`,
+    );
   }
 }
