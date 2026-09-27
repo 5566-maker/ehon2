@@ -1,0 +1,1 @@
+{"compilerOptions":{"esModuleInterop":true,"forceConsistentCasingInFileNames":true,"isolatedModules":true,"module":"NodeNext","moduleResolution":"NodeNext","noFallthroughCasesInSwitch":true,"noUncheckedIndexedAccess":true,"resolveJsonModule":true,"skipLibCheck":true,"strict":true,"target":"ES2022"}}

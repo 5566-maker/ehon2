@@ -1,0 +1,22 @@
+name: ehon2
+
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ehon2:local
+    env_file:
+      - .env
+    environment:
+      PORT: "3000"
+      DATA_DIR: /data
+    volumes:
+      - ehon2-data:/data
+    ports:
+      - "127.0.0.1:3000:3000"
+    restart: unless-stopped
+
+volumes:
+  ehon2-data:
+    driver: local
