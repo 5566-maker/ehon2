@@ -249,7 +249,10 @@ export function booksRoutes(deps: Deps): Hono {
     } catch (err) {
       if (err instanceof AiError) {
         const status = err.code === ErrorCodes.AI_RESPONSE_INVALID ? 422 : 502;
-        return fail(c, status, err.code, 'Cover analysis failed. Please try again.');
+        // Surface the provider-level cause (bad key, quota, outage, network).
+        // Single-user app: the detail is diagnostic, not a leak.
+        console.error(`[cover-analyze] ${err.code}: ${err.message}`);
+        return fail(c, status, err.code, `AI 识别失败：${err.message}`);
       }
       throw err;
     }
