@@ -92,3 +92,9 @@ export function purgeExpiredSessions(db: DatabaseSync = getDatabase()): number {
   const result = db.prepare('DELETE FROM sessions WHERE expires_at <= ?').run(nowIso());
   return Number(result.changes);
 }
+
+/** Delete ALL sessions (used after a password change to force re-login). Returns rows deleted. */
+export function deleteAllSessions(db: DatabaseSync = getDatabase()): number {
+  const result = db.prepare('DELETE FROM sessions').run();
+  return Number(result.changes);
+}

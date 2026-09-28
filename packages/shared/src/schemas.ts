@@ -42,6 +42,17 @@ export const LoginRequestSchema = z.object({
   password: z.string().min(1).max(300),
 });
 
+export const ChangePasswordSchema = z
+  .object({
+    currentPassword: z.string().min(1).max(200),
+    newPassword: z.string().min(8, 'New password must be at least 8 characters.').max(200),
+    confirmPassword: z.string().min(1).max(200),
+  })
+  .refine((data) => data.newPassword === data.confirmPassword, {
+    message: 'New passwords do not match.',
+    path: ['confirmPassword'],
+  });
+
 export const CreateBookSchema = z.object({
   title: z.string().trim().max(300).nullable().optional(),
   language: z.string().trim().min(2).max(20).default('ja'),

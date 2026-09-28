@@ -90,7 +90,10 @@ docker compose logs -f app
 5. **设置页**：登录后点右上角 ⚙️ 可进 `/settings`，用下拉菜单自由选择每种语言的 Kokoro
    声音（日/中/英各 5/8/19 个可选）和语速（0.5–2.0，0.1 步长）。页面设置存 SQLite
    `settings` 表，优先级高于环境变量；换声音/语速不影响已缓存的旧音频（缓存 key
-   本来就含 voice 和 speed）。
+   本来就含 voice 和 speed）。设置页底部还有「修改密码」：弹窗输入当前密码和新密码
+   （最短 8 位），新哈希写入 `settings.auth.password_hash`（覆盖 `AUTH_PASSWORD_HASH`
+   的登录校验），成功后删除全部 session 并跳回登录页。错误输入的当前密码同样计入
+   登录限流。
 
 Zeabur 环境变量（追加）：
 

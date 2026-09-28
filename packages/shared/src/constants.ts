@@ -17,6 +17,9 @@ export const EXT_BY_MIME: Record<string, string> = {
   'image/webp': 'webp',
 };
 
+/** settings 表中存储登录密码哈希的键。页面改密覆盖环境变量 AUTH_PASSWORD_HASH。 */
+export const AUTH_PASSWORD_HASH_SETTING_KEY = 'auth.password_hash';
+
 /** Stable API error codes (from the technical specification). */
 export const ErrorCodes = {
   UNAUTHENTICATED: 'UNAUTHENTICATED',
