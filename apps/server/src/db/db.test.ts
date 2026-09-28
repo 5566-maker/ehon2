@@ -9,6 +9,7 @@ import { createBook, getBook, deleteBook } from './books.js';
 import { createPage, getPage, listPagesByBook, reorderPages, renumberPages, deletePage, setPageOcr, getPageOcr, setPageStatus } from './pages.js';
 import { createJob } from './jobs.js';
 import { recoverStaleProcessing } from './recovery.js';
+import { refreshBookStatus } from './bookStatus.js';
 import { createBlock, getBlock, listBlocksByPage, updateBlock, deleteBlock } from './blocks.js';
 import { createSession, findValidSession, hashSessionToken } from './sessions.js';
 import { FileStorage } from '../storage/files.js';
@@ -131,6 +132,30 @@ describe('sqlite integration (migrations + repositories)', () => {
     assert.match(getPage(stale.id)?.processingError ?? '', /interrupted/);
     // A fresh, actively-running page is never touched.
     assert.equal(getPage(fresh.id)?.ocrStatus, 'processing');
+  });
+
+  it('derives book status from pages without sticking to failed', () => {
+    const book = createBook({ title: 't', language: 'ja' });
+    assert.equal(getBook(book.id)?.status, 'draft');
+    const mk = (n: number) =>
+      createPage({ bookId: book.id, pageNumber: n, originalImageKey: 'a', processedImageKey: null, width: 1, height: 1, mimeType: 'image/webp' });
+
+    const p1 = mk(1);
+    const p2 = mk(2);
+    // work still in flight -> processing
+    refreshBookStatus(book.id);
+    assert.equal(getBook(book.id)?.status, 'processing');
+
+    // one failed, rest ready -> failed (not ready)
+    setPageStatus(p1.id, 'ready');
+    setPageStatus(p2.id, 'failed');
+    refreshBookStatus(book.id);
+    assert.equal(getBook(book.id)?.status, 'failed');
+
+    // retry recovers: the failed page succeeds -> the book leaves failed behind
+    setPageStatus(p2.id, 'ready');
+    refreshBookStatus(book.id);
+    assert.equal(getBook(book.id)?.status, 'ready');
   });
 
   it('removeAudioFiles deletes the files and never throws', () => {

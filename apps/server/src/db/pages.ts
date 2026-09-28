@@ -171,21 +171,30 @@ export function renumberPages(bookId: string, db: DatabaseSync = getDatabase()):
 
 /**
  * Derive the book-level status from its pages:
- * draft (no pages) / processing (any pending|processing) /
- * ready (at least one page, all ready) / failed (kept as-is).
+ * - no pages -> draft
+ * - any pending/processing -> processing (work still in flight)
+ * - all ready -> ready
+ * - some failed and nothing in flight -> failed
+ *
+ * Deliberately NOT sticky: a book whose pages all recover after a retry must
+ * be able to leave "failed" behind. The `current` argument is kept for
+ * call-site compatibility and is unused.
  */
 export function deriveBookStatus(
   bookId: string,
   current: string,
   db: DatabaseSync = getDatabase(),
 ): 'draft' | 'processing' | 'ready' | 'failed' {
-  if (current === 'failed') return 'failed';
+  void current;
   const rows = db
     .prepare('SELECT ocr_status AS s, COUNT(*) AS n FROM pages WHERE book_id = ? GROUP BY s')
     .all(bookId) as Row[];
   if (rows.length === 0) return 'draft';
   const byStatus = new Map(rows.map((r) => [String(r.s), Number(r.n)]));
   if ((byStatus.get('pending') ?? 0) + (byStatus.get('processing') ?? 0) > 0) return 'processing';
+  const total = [...byStatus.values()].reduce((a, b) => a + b, 0);
   const ready = byStatus.get('ready') ?? 0;
-  return ready > 0 ? 'ready' : 'draft';
+  if (ready === total) return 'ready';
+  if ((byStatus.get('failed') ?? 0) > 0) return 'failed';
+  return 'draft';
 }
