@@ -152,6 +152,29 @@ export interface PageAnalysisResult {
   blocks: PageAnalysisBlock[];
 }
 
+/**
+ * One validated reading block from OpenAI enrichment.
+ * References OCR fragment IDs; geometry comes from the OCR cache, never here.
+ */
+export interface EnrichedPageBlock {
+  order: number;
+  ocrIds: string[];
+  originalText: string;
+  normalizedText: string | null;
+  readingText: string | null;
+  chineseText: string | null;
+  englishText: string | null;
+  explanationZh: string | null;
+  vocabulary: VocabularyItem[];
+  orientation: TextOrientation;
+  confidence: number;
+}
+
+export interface PageEnrichmentResult {
+  pageSummary: string | null;
+  blocks: EnrichedPageBlock[];
+}
+
 /* ---------------- API DTOs (request/response shapes) ---------------- */
 
 export interface BookListItem {

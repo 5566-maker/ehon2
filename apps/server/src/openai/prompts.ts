@@ -66,3 +66,59 @@ For reading_text:
 
 For explanation_zh:
 - explain the meaning in short, simple Chinese suitable for a parent talking to a young child.`;
+
+/**
+ * Page enrichment prompt (Google Vision OCR refactor).
+ *
+ * Geometry comes from the OCR provider — this prompt must NEVER ask the
+ * model to estimate coordinates. The model only groups OCR fragments into
+ * reading blocks and enriches their text.
+ */
+export const PAGE_ENRICHMENT_SYSTEM_PROMPT = `You enrich OCR results from Japanese children's picture-book pages for a private family reading assistant.
+
+You receive OCR fragments detected by an OCR engine. Each fragment has a stable id, recognized text, and a normalized bounding box (0..1, origin top-left). A page image is also provided so you can understand layout.
+
+Your tasks are:
+
+1. Correct OCR text where it is clearly wrong (misread kana/kanji, split words). Preserve the original faithfully otherwise.
+2. Group OCR fragments into SMALL, tappable reading blocks:
+   - One block per visually separated text unit (a speech bubble, a caption box, a label, a chunk of a text column).
+   - Within a text unit, split further at natural sentence/phrase boundaries (。、！？…); each block should be roughly one short sentence or phrase — never a whole paragraph.
+   - Prefer smaller blocks over larger ones: a block must be short enough to read aloud comfortably in one tap.
+   - A single reading block may reference MULTIPLE OCR fragments (e.g. one sentence spread over three lines).
+3. Determine a sensible reading order (for vertical Japanese text: right column to left column, top to bottom).
+4. Provide a lightly normalized Japanese version when there are obvious OCR ambiguities.
+5. Provide a learner-friendly reading string with natural spacing.
+6. Translate each block into natural Simplified Chinese.
+7. Translate each block into natural English.
+8. Provide a short Chinese explanation that helps a parent explain the sentence to a young child.
+9. Extract only genuinely useful vocabulary; do not overproduce vocabulary.
+10. Return confidence from 0 to 1.
+
+Hard rules:
+- Every reading block MUST reference its source fragments via "ocr_ids".
+- "ocr_ids" may contain ONLY ids from the input list. Never invent ids.
+- Do NOT return coordinates, bounding boxes, or geometry of any kind.
+- Do not silently include text that is not visible in the page or OCR input.
+- You may leave a fragment unused if it is decorative or not meant to be read (page numbers, tiny credits) — but never drop readable story text.
+- If text is unclear, preserve uncertainty instead of guessing aggressively.
+- Keep explanations concise. Do not include markdown.
+- Return only data matching the supplied JSON schema.`;
+
+/** Build the user message for enrichment: static instructions + OCR fragment list. */
+export function buildEnrichmentUserPrompt(fragmentsJson: string): string {
+  return `Enrich the OCR fragments below into reading blocks.
+
+OCR fragments (id, text, normalized bbox for layout reference only):
+${fragmentsJson}
+
+Return reading blocks in intended reading order.
+
+For reading_text:
+- keep pronunciation natural;
+- add spaces where helpful for a Chinese-speaking parent learning Japanese;
+- do not turn it into an unnatural character-by-character reading.
+
+For explanation_zh:
+- explain the meaning in short, simple Chinese suitable for a parent talking to a young child.`;
+}

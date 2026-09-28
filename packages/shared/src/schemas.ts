@@ -68,6 +68,16 @@ export const UpdatePageSchema = z.object({
 
 export const ProcessPageSchema = z.object({
   force: z.boolean().optional().default(false),
+  /** Re-run OCR even when a cached pages.ocr_json exists. */
+  forceOcr: z.boolean().optional().default(false),
+});
+
+export const TextRegionSchema = z.object({
+  ocrId: z.string().max(40).nullable().optional(),
+  x: z.number().min(0).max(1),
+  y: z.number().min(0).max(1),
+  width: z.number().min(0).max(1),
+  height: z.number().min(0).max(1),
 });
 
 export const CreateBlockSchema = z.object({
@@ -81,6 +91,7 @@ export const CreateBlockSchema = z.object({
   vocabulary: z.array(VocabularyItemSchema).max(50).optional().default([]),
   orientation: OrientationSchema.optional().default('unknown'),
   bbox: BBoxSchema,
+  regions: z.array(TextRegionSchema).max(200).optional(),
   confidence: z.number().min(0).max(1).nullable().optional(),
 });
 
@@ -95,6 +106,7 @@ export const UpdateBlockSchema = z.object({
   vocabulary: z.array(VocabularyItemSchema).max(50).optional(),
   orientation: OrientationSchema.optional(),
   bbox: BBoxSchema.optional(),
+  regions: z.array(TextRegionSchema).max(200).nullable().optional(),
   confidence: z.number().min(0).max(1).nullable().optional(),
 });
 
@@ -143,6 +155,31 @@ export const PageAnalysisResultSchema = z.object({
   page_summary: z.string().max(2000).nullable(),
   blocks: z.array(PageAnalysisBlockSchema).max(500),
 });
+
+/**
+ * Page enrichment result (Google Vision OCR refactor).
+ * OpenAI groups OCR fragments into reading blocks; it NEVER returns geometry.
+ */
+export const PageEnrichmentBlockSchema = z.object({
+  order: z.number().int().min(1),
+  ocr_ids: z.array(z.string().min(1).max(40)).min(1).max(200),
+  original_text: z.string().min(1).max(10000),
+  normalized_text: NullableText,
+  reading_text: NullableText,
+  chinese_text: NullableText,
+  english_text: NullableText,
+  explanation_zh: NullableText,
+  vocabulary: z.array(VocabularyItemSchema).max(50).default([]),
+  orientation: OrientationSchema,
+  confidence: z.number().min(0).max(1),
+});
+
+export const PageEnrichmentResultSchema = z.object({
+  page_summary: z.string().max(2000).nullable(),
+  reading_blocks: z.array(PageEnrichmentBlockSchema).max(500),
+});
+
+export type PageEnrichmentResultInput = z.infer<typeof PageEnrichmentResultSchema>;
 
 export type CoverAnalysisResultInput = z.infer<typeof CoverAnalysisResultSchema>;
 export type PageAnalysisResultInput = z.infer<typeof PageAnalysisResultSchema>;

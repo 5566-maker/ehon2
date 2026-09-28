@@ -1,12 +1,15 @@
 import { Hono } from 'hono';
+import sharp from 'sharp';
 import {
   CreateBlockSchema,
   ErrorCodes,
   PAGE_ANALYSIS_PROMPT_VERSION,
+  PAGE_ENRICHMENT_PROMPT_VERSION,
   ProcessPageSchema,
   UpdatePageSchema,
   type ProcessPageResult,
   type ReaderBlock,
+  type TextRegion,
 } from '@ehon2/shared';
 import type { Deps } from '../deps.js';
 import { getDatabase } from '../db/connection.js';
@@ -14,9 +17,11 @@ import { createBlock, listBlocksByPage } from '../db/blocks.js';
 import {
   deletePage,
   getPage,
+  getPageOcr,
   listPagesByBook,
   reorderPages,
   renumberPages,
+  setPageOcr,
   setPageStatus,
 } from '../db/pages.js';
 import { refreshBookStatus } from '../db/bookStatus.js';
@@ -25,6 +30,8 @@ import { fail, ok, zodDetails } from '../utils/response.js';
 import { serveMediaFile } from '../utils/media.js';
 import { AiError } from '../openai/service.js';
 import { replacePageBlocks } from '../db/blocks.js';
+import { createOcrProvider, OcrError, resolveOcrProviderName, unionBbox } from '../ocr/index.js';
+import type { OcrFragment } from '../ocr/types.js';
 
 export function pagesRoutes(deps: Deps): Hono {
   const { storage, ai } = deps;
@@ -114,6 +121,15 @@ export function pagesRoutes(deps: Deps): Hono {
     return ok(c, { blocks: listBlocksByPage(page.id) });
   });
 
+  /** Raw cached OCR fragments for the editor debug overlay (no secrets). */
+  app.get('/:id/ocr', (c) => {
+    const page = getPage(c.req.param('id'));
+    if (!page) return fail(c, 404, ErrorCodes.PAGE_NOT_FOUND, 'Page not found.');
+    const cache = getPageOcr(page.id);
+    if (!cache) return ok(c, { provider: page.ocrProvider, fragments: [] });
+    return ok(c, { provider: cache.provider, fragments: cache.fragments });
+  });
+
   app.post('/:id/blocks', async (c) => {
     const id = c.req.param('id');
     const page = getPage(id);
@@ -149,7 +165,15 @@ export function pagesRoutes(deps: Deps): Hono {
       return fail(c, 400, ErrorCodes.INVALID_REQUEST, 'Invalid request.', zodDetails(parsed.error));
     }
 
-    const job = createJob('page', id, JSON.stringify({ promptVersion: PAGE_ANALYSIS_PROMPT_VERSION }), db);
+    const ocrProviderName = resolveOcrProviderName(deps.env);
+    const promptVersion =
+      ocrProviderName === 'google' ? PAGE_ENRICHMENT_PROMPT_VERSION : PAGE_ANALYSIS_PROMPT_VERSION;
+    const job = createJob(
+      'page',
+      id,
+      JSON.stringify({ promptVersion, ocrProvider: ocrProviderName }),
+      db,
+    );
     setPageStatus(id, 'processing', null, db);
     refreshBookStatus(page.bookId, db);
 
@@ -162,8 +186,130 @@ export function pagesRoutes(deps: Deps): Hono {
       return fail(c, 500, ErrorCodes.STORAGE_ERROR, msg);
     }
 
+    // Tracks which stage failed so the error gets the right code.
+    let stage: 'ocr' | 'enrichment' | 'legacy' = 'legacy';
     try {
       const bytes = storage.read(imageKey);
+
+      if (ocrProviderName === 'google') {
+        // ---- Stage 1: OCR, cached in pages.ocr_json unless forced ----
+        stage = 'ocr';
+        const useCache = !parsed.data.forceOcr && !parsed.data.force;
+        let cache = useCache ? getPageOcr(id, db) : null;
+        if (cache && cache.fragments.length === 0) cache = null;
+
+        let fragments: OcrFragment[];
+        if (cache) {
+          fragments = cache.fragments.map((f) => ({ id: f.id, text: f.text, bbox: f.bbox }));
+          console.log(`[pages] reusing cached OCR for page ${id} (${fragments.length} fragments)`);
+        } else {
+          // Throws OcrError with a helpful message when the key is missing.
+          const provider = createOcrProvider(deps.env);
+          let width = page.width ?? 0;
+          let height = page.height ?? 0;
+          if (!width || !height) {
+            const meta = await sharp(bytes).metadata();
+            width = meta.width ?? 0;
+            height = meta.height ?? 0;
+          }
+          if (!width || !height) {
+            throw new OcrError(
+              ErrorCodes.OCR_PROVIDER_FAILED,
+              'Could not determine the page image dimensions.',
+            );
+          }
+          const ocrResult = await provider.recognize({
+            imageBytes: bytes,
+            mimeType: 'image/webp',
+            width,
+            height,
+          });
+          fragments = ocrResult.fragments;
+          setPageOcr(
+            id,
+            ocrResult.provider,
+            {
+              provider: ocrResult.provider,
+              fragments: fragments.map((f) => ({ id: f.id, text: f.text, bbox: f.bbox })),
+            },
+            db,
+          );
+          console.log(
+            `[pages] OCR done for page ${id}: ${fragments.length} fragments via ${ocrResult.provider}`,
+          );
+        }
+
+        // ---- Stage 2: OpenAI enrichment (language only, no geometry) ----
+        stage = 'enrichment';
+        const enriched = await ai.enrichPage({ imageBytes: bytes, mimeType: 'image/webp', fragments });
+
+        // ---- Stage 3: ocr_ids -> regions, union bbox for legacy compat ----
+        const fragById = new Map(fragments.map((f) => [f.id, f]));
+        const blocks = replacePageBlocks(
+          id,
+          enriched.blocks.map((b) => {
+            const regions: TextRegion[] = b.ocrIds.map((oid) => {
+              const f = fragById.get(oid);
+              if (!f) {
+                // enrichPage already validates; this is a defensive guard.
+                throw new AiError(ErrorCodes.INVALID_OCR_REFERENCE, `Unknown OCR fragment id: ${oid}`);
+              }
+              return {
+                ocrId: oid,
+                x: f.bbox.x,
+                y: f.bbox.y,
+                width: f.bbox.width,
+                height: f.bbox.height,
+              };
+            });
+            return {
+              blockOrder: b.order,
+              originalText: b.originalText,
+              normalizedText: b.normalizedText,
+              readingText: b.readingText,
+              chineseText: b.chineseText,
+              englishText: b.englishText,
+              explanationZh: b.explanationZh,
+              vocabulary: b.vocabulary,
+              orientation: b.orientation,
+              // Union of OCR regions keeps the legacy single-bbox contract working.
+              bbox: unionBbox(regions) ?? { x: 0, y: 0, width: 0, height: 0 },
+              regions,
+              confidence: b.confidence,
+            };
+          }),
+          db,
+        );
+        setPageStatus(id, 'ready', null, db);
+        finishJob(job.id, 'success', null, null, db);
+        refreshBookStatus(page.bookId, db);
+
+        const response: ProcessPageResult = {
+          pageId: id,
+          status: 'ready',
+          summary: enriched.pageSummary,
+          blocks: blocks.map(
+            (b): ReaderBlock => ({
+              id: b.id,
+              order: b.blockOrder,
+              originalText: b.originalText,
+              normalizedText: b.normalizedText,
+              readingText: b.readingText,
+              chineseText: b.chineseText,
+              englishText: b.englishText,
+              explanationZh: b.explanationZh,
+              vocabulary: b.vocabulary,
+              orientation: b.orientation,
+              bbox: b.bbox,
+              regions: b.regions,
+            }),
+          ),
+        };
+        return ok(c, response);
+      }
+
+      // ---- Legacy fallback: OpenAI does OCR + bboxes (OCR_PROVIDER=openai-legacy) ----
+      stage = 'legacy';
       const result = await ai.analyzePage({ imageBytes: bytes, mimeType: 'image/webp' });
 
       const blocks = replacePageBlocks(
@@ -211,16 +357,45 @@ export function pagesRoutes(deps: Deps): Hono {
       };
       return ok(c, response);
     } catch (err) {
-      const code = err instanceof AiError ? err.code : ErrorCodes.PAGE_ANALYSIS_FAILED;
-      const safeMessage =
-        err instanceof AiError && err.code === ErrorCodes.AI_RESPONSE_INVALID
-          ? 'The AI returned data in an unexpected format.'
-          : 'Unable to analyze this page.';
-      console.error(`[pages] process failed for page ${id}:`, err instanceof Error ? err.message : err);
+      let code: string = ErrorCodes.PAGE_ANALYSIS_FAILED;
+      let status: 400 | 401 | 403 | 404 | 409 | 413 | 415 | 422 | 500 | 502 | 503 = 502;
+      let safeMessage = 'Unable to analyze this page.';
+      if (err instanceof OcrError) {
+        code = err.code;
+        if (err.code === ErrorCodes.OCR_EMPTY_RESULT) {
+          safeMessage = 'No text was detected on this page.';
+        } else if (!deps.env.GOOGLE_VISION_API_KEY) {
+          safeMessage =
+            'Text detection is not configured. Set GOOGLE_VISION_API_KEY on the server, ' +
+            'or use OCR_PROVIDER=openai-legacy.';
+        } else {
+          safeMessage = 'Text detection failed for this page.';
+        }
+        console.error(`[pages] OCR failed for page ${id}:`, err.message);
+      } else if (err instanceof AiError) {
+        if (
+          err.code === ErrorCodes.AI_RESPONSE_INVALID ||
+          err.code === ErrorCodes.INVALID_OCR_REFERENCE
+        ) {
+          code = err.code;
+          status = 422;
+          safeMessage = 'The AI returned data in an unexpected format.';
+        } else if (stage === 'enrichment') {
+          code = ErrorCodes.PAGE_ENRICHMENT_FAILED;
+          safeMessage = 'Unable to enrich this page.';
+        } else {
+          code = err.code;
+        }
+        console.error(`[pages] process failed for page ${id}:`, err.message);
+      } else {
+        console.error(
+          `[pages] process failed for page ${id}:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
       setPageStatus(id, 'failed', safeMessage, db);
       finishJob(job.id, 'failed', code, safeMessage, db);
       refreshBookStatus(page.bookId, db);
-      const status = code === ErrorCodes.AI_RESPONSE_INVALID ? 422 : 502;
       return fail(c, status, code, `${safeMessage} You can retry or add text blocks manually.`);
     }
   });

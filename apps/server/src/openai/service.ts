@@ -5,17 +5,24 @@ import {
   CoverAnalysisResultSchema,
   ErrorCodes,
   PAGE_ANALYSIS_PROMPT_VERSION,
+  PAGE_ENRICHMENT_PROMPT_VERSION,
   PageAnalysisResultSchema,
+  PageEnrichmentResultSchema,
   type BBox,
   type CoverMetadata,
+  type EnrichedPageBlock,
   type PageAnalysisBlock,
   type PageAnalysisResult,
+  type PageEnrichmentResult,
   type ReaderLanguage,
 } from '@ehon2/shared';
 import type { AppEnv } from '../env.js';
+import type { OcrFragment } from '../ocr/types.js';
 import {
+  buildEnrichmentUserPrompt,
   COVER_SYSTEM_PROMPT,
   COVER_USER_PROMPT,
+  PAGE_ENRICHMENT_SYSTEM_PROMPT,
   PAGE_SYSTEM_PROMPT,
   PAGE_USER_PROMPT,
 } from './prompts.js';
@@ -278,6 +285,125 @@ export class AiService {
         confidence: b.confidence,
       });
     }
+    return { pageSummary: parsed.data.page_summary, blocks };
+  }
+
+  /**
+   * Enrich OCR fragments into reading blocks.
+   *
+   * The model receives the page image plus OCR fragment ids/text/geometry,
+   * but must NOT return any geometry — every returned ocr_id is validated
+   * against the input and unknown ids are rejected.
+   */
+  async enrichPage(input: {
+    imageBytes: Buffer;
+    mimeType: string;
+    fragments: OcrFragment[];
+  }): Promise<PageEnrichmentResult> {
+    const knownIds = new Set(input.fragments.map((f) => f.id));
+    const fragmentsJson = JSON.stringify(
+      input.fragments.map((f) => ({
+        id: f.id,
+        text: f.text,
+        // Layout context only — the model must not return geometry.
+        bbox: { x: +f.bbox.x.toFixed(4), y: +f.bbox.y.toFixed(4) },
+      })),
+    );
+
+    const raw = await this.chatJson({
+      model: this.env.OPENAI_VISION_MODEL,
+      system: PAGE_ENRICHMENT_SYSTEM_PROMPT,
+      user: buildEnrichmentUserPrompt(fragmentsJson),
+      image: { bytes: input.imageBytes, mimeType: input.mimeType },
+      schemaName: 'page_enrichment',
+      schema: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['page_summary', 'reading_blocks'],
+        properties: {
+          page_summary: { type: ['string', 'null'] },
+          reading_blocks: {
+            type: 'array',
+            items: {
+              type: 'object',
+              additionalProperties: false,
+              required: [
+                'order', 'ocr_ids', 'original_text', 'normalized_text', 'reading_text',
+                'chinese_text', 'english_text', 'explanation_zh',
+                'vocabulary', 'orientation', 'confidence',
+              ],
+              properties: {
+                order: { type: 'integer', minimum: 1 },
+                ocr_ids: {
+                  type: 'array',
+                  minItems: 1,
+                  items: { type: 'string', minLength: 1 },
+                },
+                original_text: { type: 'string' },
+                normalized_text: { type: ['string', 'null'] },
+                reading_text: { type: ['string', 'null'] },
+                chinese_text: { type: ['string', 'null'] },
+                english_text: { type: ['string', 'null'] },
+                explanation_zh: { type: ['string', 'null'] },
+                vocabulary: {
+                  type: 'array',
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['word', 'reading', 'meaning_zh'],
+                    properties: {
+                      word: { type: 'string' },
+                      reading: { type: ['string', 'null'] },
+                      meaning_zh: { type: 'string' },
+                    },
+                  },
+                },
+                orientation: { type: 'string', enum: ['horizontal', 'vertical', 'mixed', 'unknown'] },
+                confidence: { type: 'number', minimum: 0, maximum: 1 },
+              },
+            },
+          },
+        },
+      },
+    });
+
+    const parsed = PageEnrichmentResultSchema.safeParse(raw);
+    if (!parsed.success) {
+      throw new AiError(ErrorCodes.AI_RESPONSE_INVALID, 'Page enrichment returned invalid data', parsed.error);
+    }
+
+    // Validate ocr_id references: unknown ids are rejected, never silently kept.
+    const sorted = [...parsed.data.reading_blocks].sort((a, b) => a.order - b.order);
+    const blocks: EnrichedPageBlock[] = [];
+    for (const b of sorted) {
+      const unknown = b.ocr_ids.filter((id) => !knownIds.has(id));
+      if (unknown.length > 0) {
+        throw new AiError(
+          ErrorCodes.INVALID_OCR_REFERENCE,
+          `Page enrichment referenced unknown OCR fragment ids: ${unknown.slice(0, 5).join(', ')}`,
+        );
+      }
+      // De-duplicate ids within a block while preserving order.
+      const ocrIds = [...new Set(b.ocr_ids)];
+      blocks.push({
+        order: blocks.length + 1,
+        ocrIds,
+        originalText: b.original_text,
+        normalizedText: b.normalized_text,
+        readingText: b.reading_text,
+        chineseText: b.chinese_text,
+        englishText: b.english_text,
+        explanationZh: b.explanation_zh,
+        vocabulary: b.vocabulary.map((v) => ({
+          word: v.word,
+          reading: v.reading ?? null,
+          meaning_zh: v.meaning_zh,
+        })),
+        orientation: b.orientation,
+        confidence: b.confidence,
+      });
+    }
+    console.log(`[enrichment] prompt=${PAGE_ENRICHMENT_PROMPT_VERSION} blocks=${blocks.length}`);
     return { pageSummary: parsed.data.page_summary, blocks };
   }
 
