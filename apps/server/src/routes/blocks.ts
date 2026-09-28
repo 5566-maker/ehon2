@@ -3,6 +3,7 @@ import {
   audioKey,
   AudioRequestSchema,
   ErrorCodes,
+  ttsVoiceSettingKey,
   UpdateBlockSchema,
   type AudioRequestResult,
 } from '@ehon2/shared';
@@ -13,6 +14,7 @@ import { createAudio, deleteAudioAssetsByBlockId, findAudio, listAudioKeysByBloc
 import { removeAudioFiles } from '../utils/audioFiles.js';
 import { fail, ok, zodDetails } from '../utils/response.js';
 import { AiError, selectTtsText, textHash } from '../openai/service.js';
+import { getSetting } from '../db/settings.js';
 import {
   audioCacheIdentity,
   resolveTtsSpeed,
@@ -75,7 +77,9 @@ export function blocksRoutes(deps: Deps): Hono {
       return fail(c, 400, ErrorCodes.INVALID_REQUEST, 'Invalid audio request.', zodDetails(parsed.error));
     }
     const { language } = parsed.data;
-    const ttsVoice = resolveTtsVoice(env, language, parsed.data.voice);
+    // Settings-page voice override wins over the env override and the default.
+    const dbVoice = getSetting(ttsVoiceSettingKey(language), db);
+    const ttsVoice = resolveTtsVoice(env, language, parsed.data.voice, dbVoice);
     const voice = ttsVoice.voice; // provider voice sent to the TTS request
     const cacheVoice = ttsVoice.cacheVoice; // namespaced cache identity (kokoro/* vs OpenAI)
     // Client-supplied speed wins; otherwise the per-language / global TTS_SPEED env default.

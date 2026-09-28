@@ -7,6 +7,7 @@ import { booksRoutes } from './routes/books.js';
 import { pagesRoutes } from './routes/pages.js';
 import { blocksRoutes } from './routes/blocks.js';
 import { audioRoutes } from './routes/audio.js';
+import { settingsRoutes } from './routes/settings.js';
 import { ok } from './utils/response.js';
 import { serveStaticApp } from './static.js';
 
@@ -29,6 +30,7 @@ export function createApp(deps: Deps): Hono {
   app.route('/api/pages', pagesRoutes(deps));
   app.route('/api/text-blocks', blocksRoutes(deps));
   app.route('/api/audio', audioRoutes(deps));
+  app.route('/api/settings', settingsRoutes(deps));
 
   // Frontend static files + SPA fallback (everything else).
   app.route('/', serveStaticApp(deps));

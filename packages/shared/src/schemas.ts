@@ -116,6 +116,15 @@ export const AudioRequestSchema = z.object({
   speed: z.number().min(0.5).max(2).optional(),
 });
 
+/** Settings page: per-language Kokoro voice overrides (partial update allowed). */
+export const TtsVoicesUpdateSchema = z
+  .object({
+    ja: z.string().min(1).max(100).optional(),
+    zh: z.string().min(1).max(100).optional(),
+    en: z.string().min(1).max(100).optional(),
+  })
+  .strict();
+
 /* ---------------- AI structured-output schemas ---------------- */
 
 const NullableText = z.string().nullable();
