@@ -34,9 +34,10 @@ export function ReaderPage() {
   const [pageIdx, setPageIdx] = useState(0);
   const [selected, setSelected] = useState<ReaderBlock | null>(null);
   const [lang, setLang] = useState<ReaderLanguage>('ja');
-  const [ttsLoading, setTtsLoading] = useState<ReaderLanguage | null>(null);
+  const [mode, setMode] = useState<'text' | 'read'>('text');
+  const [ttsLoading, setTtsLoading] = useState<{ blockId: string; lang: ReaderLanguage } | null>(null);
   const [ttsError, setTtsError] = useState<string | null>(null);
-  const [playing, setPlaying] = useState<ReaderLanguage | null>(null);
+  const [playing, setPlaying] = useState<{ blockId: string; lang: ReaderLanguage } | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const touchX = useRef<number | null>(null);
 
@@ -96,8 +97,8 @@ export function ReaderPage() {
   }, [goPage]);
 
   const playTts = async (block: ReaderBlock, language: ReaderLanguage) => {
-    if (playing === language && audioRef.current) {
-      // Toggle pause for the currently playing language.
+    if (playing && playing.blockId === block.id && playing.lang === language && audioRef.current) {
+      // Toggle pause for the currently playing block+language.
       if (audioRef.current.paused) {
         await audioRef.current.play();
       } else {
@@ -108,7 +109,7 @@ export function ReaderPage() {
     }
     stopAudio();
     setTtsError(null);
-    setTtsLoading(language);
+    setTtsLoading({ blockId: block.id, lang: language });
     try {
       const res = await apiSend<{ audioUrl: string }>(`/api/text-blocks/${block.id}/audio`, 'POST', {
         language,
@@ -121,7 +122,7 @@ export function ReaderPage() {
         setPlaying(null);
       };
       await audio.play();
-      setPlaying(language);
+      setPlaying({ blockId: block.id, lang: language });
     } catch (err) {
       setTtsError(errorMessage(err));
     } finally {
@@ -175,6 +176,34 @@ export function ReaderPage() {
         </div>
       </div>
 
+      {/* Mode toggle: text (dialog) vs read-aloud (tap to play) */}
+      <div className="mb-3 flex justify-center">
+        <div className="flex rounded-full bg-cream-dark p-1" role="group" aria-label="阅读模式">
+          {(
+            [
+              { value: 'text', label: '文本' },
+              { value: 'read', label: '朗读' },
+            ] as const
+          ).map((m) => (
+            <button
+              key={m.value}
+              type="button"
+              onClick={() => {
+                setMode(m.value);
+                setSelected(null);
+                stopAudio();
+              }}
+              aria-pressed={mode === m.value}
+              className={`rounded-full px-5 py-1 text-xs font-semibold transition ${
+                mode === m.value ? 'bg-leaf text-white shadow' : 'text-cocoa-soft hover:text-cocoa'
+              }`}
+            >
+              {m.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Page image with hotspots */}
       <div
         className="relative select-none overflow-hidden rounded-2xl bg-cream-dark shadow"
@@ -210,6 +239,7 @@ export function ReaderPage() {
         )}
         {page?.blocks.map((b) => {
           const isSelected = selected?.id === b.id;
+          const isPlaying = playing?.blockId === b.id;
           // One block can own multiple precise OCR regions; all share the
           // same selected state and open the same panel. Legacy blocks fall
           // back to the single bbox.
@@ -221,7 +251,7 @@ export function ReaderPage() {
                   {/* visual highlight (exact region, never moves) */}
                   <div
                     aria-hidden="true"
-                    className={`pointer-events-none absolute rounded ${isSelected ? 'hotspot-selected border-2' : 'border-2 border-transparent'}`}
+                    className={`pointer-events-none absolute rounded ${isSelected || isPlaying ? 'hotspot-selected border-2' : 'border-2 border-transparent'}`}
                     style={bboxStyle(r)}
                   />
                   {/* expanded hit target */}
@@ -233,8 +263,14 @@ export function ReaderPage() {
                     style={hitStyle(r)}
                     onClick={(e) => {
                       e.stopPropagation();
-                      stopAudio();
-                      setSelected(isSelected ? null : b);
+                      if (mode === 'read') {
+                        // Read-aloud mode: tap once to play this block in the
+                        // current language, no dialog.
+                        void playTts(b, lang);
+                      } else {
+                        stopAudio();
+                        setSelected(isSelected ? null : b);
+                      }
                     }}
                   />
                 </div>
@@ -261,7 +297,12 @@ export function ReaderPage() {
           下一页 →
         </button>
       </div>
-      <p className="mt-2 text-center text-xs text-cocoa-soft">点一下图中的文字试试 · 左右滑动也可以翻页</p>
+      <p className="mt-2 text-center text-xs text-cocoa-soft">
+        {mode === 'read' ? '点一下文字直接朗读 · 左右滑动也可以翻页' : '点一下图中的文字试试 · 左右滑动也可以翻页'}
+      </p>
+      {mode === 'read' && ttsError && (
+        <p role="alert" className="mx-auto mt-2 max-w-md rounded-xl bg-blush/20 px-3 py-2 text-center text-sm">{ttsError}</p>
+      )}
 
       {/* Bottom sheet */}
       {selected && (
@@ -333,21 +374,25 @@ export function ReaderPage() {
                 <p role="alert" className="mb-2 rounded-xl bg-blush/20 px-3 py-2 text-sm">{ttsError}</p>
               )}
               <div className="flex flex-wrap gap-2">
-                {LANGS.map((l) => (
-                  <button
-                    key={l}
-                    type="button"
-                    onClick={() => playTts(selected, l)}
-                    disabled={ttsLoading !== null}
-                    aria-pressed={playing === l}
-                    className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition active:scale-97 disabled:opacity-60 ${
-                      playing === l ? 'bg-apricot text-white shadow' : 'btn-soft'
-                    }`}
-                  >
-                    {ttsLoading === l ? <Spinner size={16} /> : <span aria-hidden="true">{playing === l ? '⏸' : '▶'}</span>}
-                    {LANGUAGE_LABELS[l]}
-                  </button>
-                ))}
+                {LANGS.map((l) => {
+                  const isThisLoading = ttsLoading?.blockId === selected.id && ttsLoading?.lang === l;
+                  const isThisPlaying = playing?.blockId === selected.id && playing?.lang === l;
+                  return (
+                    <button
+                      key={l}
+                      type="button"
+                      onClick={() => playTts(selected, l)}
+                      disabled={ttsLoading !== null}
+                      aria-pressed={isThisPlaying}
+                      className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition active:scale-97 disabled:opacity-60 ${
+                        isThisPlaying ? 'bg-apricot text-white shadow' : 'btn-soft'
+                      }`}
+                    >
+                      {isThisLoading ? <Spinner size={16} /> : <span aria-hidden="true">{isThisPlaying ? '⏸' : '▶'}</span>}
+                      {LANGUAGE_LABELS[l]}
+                    </button>
+                  );
+                })}
               </div>
               <p className="mt-2 text-xs text-cocoa-soft">音频生成后会自动缓存，下次直接播放。</p>
             </div>
