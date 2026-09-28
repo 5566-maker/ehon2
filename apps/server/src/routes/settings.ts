@@ -4,30 +4,21 @@ import {
   KOKORO_DEFAULT_VOICES,
   KOKORO_VOICE_OPTIONS,
   READER_LANGUAGES,
-  TtsVoicesUpdateSchema,
+  TTS_SPEED_DEFAULT,
+  TTS_SPEED_OPTIONS,
+  TtsSettingsUpdateSchema,
   isKokoroVoice,
+  isValidTtsSpeed,
+  ttsSpeedSettingKey,
   ttsVoiceSettingKey,
   type ReaderLanguage,
+  type TtsSpeedInfo,
+  type TtsVoiceInfo,
 } from '@ehon2/shared';
 import type { Deps } from '../deps.js';
 import { getDatabase } from '../db/connection.js';
 import { getSetting, setSetting } from '../db/settings.js';
 import { fail, ok, zodDetails } from '../utils/response.js';
-
-export type TtsVoiceSource = 'settings' | 'env' | 'default';
-
-export interface TtsVoiceInfo {
-  /** Effective voice id for the language. */
-  effective: string;
-  /** Where the effective voice came from. */
-  source: TtsVoiceSource;
-  /** Voice explicitly chosen on the settings page, if any. */
-  settingsValue: string | null;
-  /** Env override, if set. */
-  envValue: string | null;
-  /** Selectable options for the language. */
-  options: { id: string; gender: 'female' | 'male' }[];
-}
 
 function envVoice(env: Deps['env'], language: ReaderLanguage): string | null {
   switch (language) {
@@ -54,35 +45,69 @@ export function ttsVoiceInfo(env: Deps['env'], language: ReaderLanguage): TtsVoi
   };
 }
 
+/** Parse a stored speed setting; null when unset or (defensively) invalid. */
+export function dbTtsSpeed(language: ReaderLanguage): number | null {
+  const raw = getSetting(ttsSpeedSettingKey(language), getDatabase());
+  if (raw === null) return null;
+  const parsed = Number(raw);
+  return isValidTtsSpeed(parsed) ? parsed : null;
+}
+
+export function ttsSpeedInfo(env: Deps['env'], language: ReaderLanguage): TtsSpeedInfo {
+  const settingsValue = dbTtsSpeed(language);
+  const perLanguage = { ja: env.TTS_SPEED_JA, zh: env.TTS_SPEED_ZH, en: env.TTS_SPEED_EN }[
+    language
+  ];
+  const global = env.TTS_SPEED ?? null;
+  const envValue = perLanguage ?? global;
+  const effective = settingsValue ?? envValue ?? TTS_SPEED_DEFAULT;
+  return {
+    effective,
+    source:
+      settingsValue != null
+        ? 'settings'
+        : perLanguage != null || (global != null && global !== TTS_SPEED_DEFAULT)
+          ? 'env'
+          : 'default',
+    settingsValue,
+    envValue,
+    options: TTS_SPEED_OPTIONS,
+  };
+}
+
 export function settingsRoutes(deps: Deps): Hono {
   const { env } = deps;
   const app = new Hono();
 
-  // Current effective Kokoro voices per language, with selectable options.
-  app.get('/tts-voices', (c) => {
-    const voices = Object.fromEntries(
+  const current = () => ({
+    voices: Object.fromEntries(
       READER_LANGUAGES.map((language) => [language, ttsVoiceInfo(env, language)]),
-    );
-    return ok(c, { voices });
+    ),
+    speeds: Object.fromEntries(
+      READER_LANGUAGES.map((language) => [language, ttsSpeedInfo(env, language)]),
+    ),
   });
 
-  // Save UI-chosen Kokoro voices. Each value must be a known voice id for
-  // its language; partial updates are allowed.
-  app.put('/tts-voices', async (c) => {
+  // Current effective TTS voices + speeds per language, with selectable options.
+  app.get('/tts', (c) => ok(c, current()));
+
+  // Save UI-chosen TTS voices and/or speeds. Partial updates are allowed.
+  // Voices must be known Kokoro voice ids; speeds must be 0.5–2.0 in 0.1 steps.
+  app.put('/tts', async (c) => {
     let body: unknown;
     try {
       body = await c.req.json();
     } catch {
       return fail(c, 400, ErrorCodes.INVALID_REQUEST, 'Invalid JSON body.');
     }
-    const parsed = TtsVoicesUpdateSchema.safeParse(body ?? {});
+    const parsed = TtsSettingsUpdateSchema.safeParse(body ?? {});
     if (!parsed.success) {
-      return fail(c, 400, ErrorCodes.INVALID_REQUEST, 'Invalid voice settings.', zodDetails(parsed.error));
+      return fail(c, 400, ErrorCodes.INVALID_REQUEST, 'Invalid TTS settings.', zodDetails(parsed.error));
     }
+    const { voices = {}, speeds = {} } = parsed.data;
     for (const language of READER_LANGUAGES) {
-      const voice = parsed.data[language];
-      if (voice === undefined) continue;
-      if (!isKokoroVoice(language, voice)) {
+      const voice = voices[language];
+      if (voice !== undefined && !isKokoroVoice(language, voice)) {
         return fail(
           c,
           400,
@@ -90,16 +115,27 @@ export function settingsRoutes(deps: Deps): Hono {
           `Unknown Kokoro voice "${voice}" for language "${language}".`,
         );
       }
+      const speed = speeds[language];
+      if (speed !== undefined && !isValidTtsSpeed(speed)) {
+        return fail(
+          c,
+          400,
+          ErrorCodes.INVALID_REQUEST,
+          `Invalid TTS speed "${speed}" for language "${language}": must be 0.5–2.0 in 0.1 steps.`,
+        );
+      }
     }
     const db = getDatabase();
     for (const language of READER_LANGUAGES) {
-      const voice = parsed.data[language];
+      const voice = voices[language];
       if (voice !== undefined) setSetting(ttsVoiceSettingKey(language), voice, db);
+      const speed = speeds[language];
+      if (speed !== undefined) {
+        // Normalize to the exact tenth so the stored value round-trips cleanly.
+        setSetting(ttsSpeedSettingKey(language), String(Math.round(speed * 10) / 10), db);
+      }
     }
-    const voices = Object.fromEntries(
-      READER_LANGUAGES.map((language) => [language, ttsVoiceInfo(env, language)]),
-    );
-    return ok(c, { voices });
+    return ok(c, current());
   });
 
   return app;

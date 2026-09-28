@@ -15,6 +15,7 @@ import { removeAudioFiles } from '../utils/audioFiles.js';
 import { fail, ok, zodDetails } from '../utils/response.js';
 import { AiError, selectTtsText, textHash } from '../openai/service.js';
 import { getSetting } from '../db/settings.js';
+import { dbTtsSpeed } from './settings.js';
 import {
   audioCacheIdentity,
   resolveTtsSpeed,
@@ -82,8 +83,8 @@ export function blocksRoutes(deps: Deps): Hono {
     const ttsVoice = resolveTtsVoice(env, language, parsed.data.voice, dbVoice);
     const voice = ttsVoice.voice; // provider voice sent to the TTS request
     const cacheVoice = ttsVoice.cacheVoice; // namespaced cache identity (kokoro/* vs OpenAI)
-    // Client-supplied speed wins; otherwise the per-language / global TTS_SPEED env default.
-    const speed = Math.round((parsed.data.speed ?? resolveTtsSpeed(env, language)) * 100) / 100;
+    // Client-supplied speed wins; otherwise the settings-page / env default.
+    const speed = Math.round((parsed.data.speed ?? resolveTtsSpeed(env, language, dbTtsSpeed(language))) * 100) / 100;
 
     const text = selectTtsText(block, language);
     if (!text || text.trim().length === 0) {

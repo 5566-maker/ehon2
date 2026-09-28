@@ -144,10 +144,16 @@ export function resolveTtsVoice(
 
 /**
  * Resolve the default TTS speed for a language.
- * Per-language env overrides (TTS_SPEED_JA/ZH/EN) win; otherwise TTS_SPEED.
- * A client-supplied request speed still wins over both (see blocks route).
+ * Priority: settings-page DB override > per-language env (TTS_SPEED_JA/ZH/EN)
+ * > global TTS_SPEED. A client-supplied request speed still wins over all of
+ * these (see blocks route).
  */
-export function resolveTtsSpeed(env: AppEnv, language: ReaderLanguage): number {
+export function resolveTtsSpeed(
+  env: AppEnv,
+  language: ReaderLanguage,
+  dbSpeed?: number | null,
+): number {
+  if (dbSpeed != null) return dbSpeed;
   const perLanguage = { ja: env.TTS_SPEED_JA, zh: env.TTS_SPEED_ZH, en: env.TTS_SPEED_EN }[
     language
   ];
