@@ -60,6 +60,8 @@ Coordinate system:
 Return blocks in intended reading order.
 
 For reading_text:
+- write it ENTIRELY in hiragana/katakana (Japanese punctuation 、。！？〜・… is fine);
+- NEVER include kanji, romaji, or Chinese characters: convert every kanji word to its kana reading;
 - keep pronunciation natural;
 - add spaces where helpful for a Chinese-speaking parent learning Japanese;
 - do not turn it into an unnatural character-by-character reading.
@@ -115,6 +117,8 @@ ${fragmentsJson}
 Return reading blocks in intended reading order.
 
 For reading_text:
+- write it ENTIRELY in hiragana/katakana (Japanese punctuation 、。！？〜・… is fine);
+- NEVER include kanji, romaji, or Chinese characters: convert every kanji word to its kana reading;
 - keep pronunciation natural;
 - add spaces where helpful for a Chinese-speaking parent learning Japanese;
 - do not turn it into an unnatural character-by-character reading.

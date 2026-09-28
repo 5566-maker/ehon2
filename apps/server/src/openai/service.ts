@@ -256,7 +256,11 @@ export class AiService {
                 order: { type: 'integer', minimum: 1 },
                 original_text: { type: 'string' },
                 normalized_text: { type: ['string', 'null'] },
-                reading_text: { type: ['string', 'null'] },
+                reading_text: {
+                  type: ['string', 'null'],
+                  description:
+                    'Full kana reading of the block: hiragana/katakana only, no kanji.',
+                },
                 chinese_text: { type: ['string', 'null'] },
                 english_text: { type: ['string', 'null'] },
                 explanation_zh: { type: ['string', 'null'] },
@@ -412,7 +416,11 @@ export class AiService {
                 },
                 original_text: { type: 'string' },
                 normalized_text: { type: ['string', 'null'] },
-                reading_text: { type: ['string', 'null'] },
+                reading_text: {
+                  type: ['string', 'null'],
+                  description:
+                    'Full kana reading of the block: hiragana/katakana only, no kanji.',
+                },
                 chinese_text: { type: ['string', 'null'] },
                 english_text: { type: ['string', 'null'] },
                 explanation_zh: { type: ['string', 'null'] },
@@ -480,7 +488,8 @@ export class AiService {
 
   /**
    * Synthesize speech. Returns MP3 bytes.
-   * For Japanese the caller must pass normalized/original text (never reading_text).
+   * For Japanese the caller passes selectTtsText() output, which prefers the
+   * kana reading_text so kanji is never misread as Chinese.
    *
    * Provider chain: TTS_PROVIDER=kokoro tries Kokoro once, then falls back
    * once to OpenAI on connection/timeout/5xx/invalid-audio failures.
