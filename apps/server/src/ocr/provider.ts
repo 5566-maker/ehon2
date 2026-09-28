@@ -30,7 +30,10 @@ export function createOcrProvider(env: AppEnv): OcrProvider {
           'Set it in the server environment (Zeabur variables), or set OCR_PROVIDER=openai-legacy.',
       );
     }
-    return new GoogleVisionOcrProvider({ apiKey: env.GOOGLE_VISION_API_KEY });
+    return new GoogleVisionOcrProvider({
+      apiKey: env.GOOGLE_VISION_API_KEY,
+      timeoutMs: env.GOOGLE_VISION_TIMEOUT_MS,
+    });
   }
   throw new OcrError(
     ErrorCodes.INTERNAL_ERROR,

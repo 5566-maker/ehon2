@@ -111,7 +111,8 @@ export class AiService {
     private readonly env: AppEnv,
     options: AiServiceOptions = {},
   ) {
-    this.client = options.client ?? new OpenAI({ apiKey: env.OPENAI_API_KEY });
+    this.client =
+      options.client ?? new OpenAI({ apiKey: env.OPENAI_API_KEY, timeout: env.OPENAI_TIMEOUT_MS });
     this.kokoroFetch = options.kokoroFetch;
   }
 

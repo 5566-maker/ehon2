@@ -46,6 +46,12 @@ const EnvSchema = z.object({
     .optional()
     .transform((v) => (v === undefined ? undefined : v === 'true')),
   OCR_PROVIDER: z.enum(['google', 'openai-legacy']).default('google'),
+  // Abort a hung Google Vision request instead of leaving pages stuck in
+  // "processing".
+  GOOGLE_VISION_TIMEOUT_MS: z.coerce.number().int().positive().max(300000).default(30000),
+  // Client-level timeout for OpenAI API calls (enrichment, cover analysis,
+  // TTS). The SDK default is 10 minutes; 60s keeps failures visible fast.
+  OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().max(600000).default(60000),
 
   // ---- uploads / images ----
   IMAGE_MAX_DIM: z.coerce.number().int().min(256).max(4096).default(1600),

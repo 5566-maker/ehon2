@@ -261,6 +261,25 @@ describe('GoogleVisionOcrProvider', () => {
     await assert.rejects(() => netFail.recognize({ imageBytes: Buffer.from('x'), mimeType: 'image/png', width: 1, height: 1 }), (err: unknown) => err instanceof OcrError && err.code === ErrorCodes.OCR_PROVIDER_FAILED);
   });
 
+  it('aborts a hung request after the configured timeout', async () => {
+    const hangingFetch = ((url: string, init?: { signal?: AbortSignal }) =>
+      new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          reject(new DOMException('The operation was aborted.', 'AbortError'));
+        });
+      })) as typeof fetch;
+    const provider = new GoogleVisionOcrProvider({ apiKey: 'k', timeoutMs: 30, fetchImpl: hangingFetch });
+    await assert.rejects(
+      () =>
+        provider.recognize({ imageBytes: Buffer.from('x'), mimeType: 'image/png', width: 1, height: 1 }),
+      (err: unknown) => {
+        assert.ok(err instanceof OcrError && err.code === ErrorCodes.OCR_PROVIDER_FAILED);
+        assert.match(err.message, /timed out after 30ms/);
+        return true;
+      },
+    );
+  });
+
   it('reports OCR_EMPTY_RESULT when Vision finds no text', async () => {
     const provider = new GoogleVisionOcrProvider({ apiKey: 'k', fetchImpl: okFetch({ responses: [{}] }) });
     await assert.rejects(

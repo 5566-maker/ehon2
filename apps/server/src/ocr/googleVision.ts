@@ -111,12 +111,17 @@ export interface GoogleVisionOptions {
   apiKey: string;
   /** fetch implementation (injectable for tests). */
   fetchImpl?: typeof fetch;
+  /** Abort a hung request after this many ms (default 30s). */
+  timeoutMs?: number;
 }
+
+const DEFAULT_VISION_TIMEOUT_MS = 30_000;
 
 export class GoogleVisionOcrProvider implements OcrProvider {
   readonly name = 'google-vision';
   private readonly apiKey: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly timeoutMs: number;
 
   constructor(options: GoogleVisionOptions) {
     if (!options.apiKey) {
@@ -127,6 +132,7 @@ export class GoogleVisionOcrProvider implements OcrProvider {
     }
     this.apiKey = options.apiKey;
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.timeoutMs = options.timeoutMs ?? DEFAULT_VISION_TIMEOUT_MS;
   }
 
   async recognize(input: OcrRecognizeInput): Promise<OcrResult> {
@@ -140,18 +146,26 @@ export class GoogleVisionOcrProvider implements OcrProvider {
     };
 
     let res: Response;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), this.timeoutMs);
     try {
       res = await this.fetchImpl(`${VISION_ENDPOINT}?key=${encodeURIComponent(this.apiKey)}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
+        signal: controller.signal,
       });
     } catch (err) {
+      const timedOut = err instanceof Error && err.name === 'AbortError';
       throw new OcrError(
         ErrorCodes.OCR_PROVIDER_FAILED,
-        `Google Vision request failed: ${err instanceof Error ? err.message : String(err)}`,
+        timedOut
+          ? `Google Vision request timed out after ${this.timeoutMs}ms.`
+          : `Google Vision request failed: ${err instanceof Error ? err.message : String(err)}`,
         err,
       );
+    } finally {
+      clearTimeout(timer);
     }
 
     let data: VisionResponse;
