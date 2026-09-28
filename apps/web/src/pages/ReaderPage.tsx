@@ -210,27 +210,35 @@ export function ReaderPage() {
         )}
         {page?.blocks.map((b) => {
           const isSelected = selected?.id === b.id;
+          // One block can own multiple precise OCR regions; all share the
+          // same selected state and open the same panel. Legacy blocks fall
+          // back to the single bbox.
+          const clickTargets = b.regions.length > 0 ? b.regions : [b.bbox];
           return (
             <div key={b.id}>
-              {/* visual highlight (exact bbox, never moves) */}
-              <div
-                aria-hidden="true"
-                className={`pointer-events-none absolute rounded ${isSelected ? 'hotspot-selected border-2' : 'border-2 border-transparent'}`}
-                style={bboxStyle(b.bbox)}
-              />
-              {/* expanded hit target */}
-              <button
-                type="button"
-                aria-pressed={isSelected}
-                aria-label={`文本 ${b.order}：${b.originalText.slice(0, 30)}`}
-                className="absolute cursor-pointer bg-transparent"
-                style={hitStyle(b.bbox)}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  stopAudio();
-                  setSelected(isSelected ? null : b);
-                }}
-              />
+              {clickTargets.map((r, i) => (
+                <div key={i}>
+                  {/* visual highlight (exact region, never moves) */}
+                  <div
+                    aria-hidden="true"
+                    className={`pointer-events-none absolute rounded ${isSelected ? 'hotspot-selected border-2' : 'border-2 border-transparent'}`}
+                    style={bboxStyle(r)}
+                  />
+                  {/* expanded hit target */}
+                  <button
+                    type="button"
+                    aria-pressed={isSelected}
+                    aria-label={`文本 ${b.order}：${b.originalText.slice(0, 30)}`}
+                    className="absolute cursor-pointer bg-transparent"
+                    style={hitStyle(r)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      stopAudio();
+                      setSelected(isSelected ? null : b);
+                    }}
+                  />
+                </div>
+              ))}
             </div>
           );
         })}
