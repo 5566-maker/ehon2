@@ -1,4 +1,7 @@
-import type { BBox } from '@ehon2/shared';
+import type { BBox, TextRegion } from '@ehon2/shared';
+import { ErrorCodes } from '@ehon2/shared';
+import { OcrError } from './types.js';
+import type { OcrFragment } from './types.js';
 
 /**
  * Geometry normalization for OCR providers.
@@ -82,5 +85,28 @@ export function unionBbox(bboxes: BBox[]): BBox | null {
     y: top,
     width: Math.max(0, right - left),
     height: Math.max(0, bottom - top),
+  });
+}
+
+/**
+ * Map a validated enrichment block's ocr_ids to clickable regions.
+ * Throws INVALID_OCR_REFERENCE if an id is not in the cached fragments.
+ */
+export function regionsForOcrIds(
+  ocrIds: string[],
+  fragmentsById: Map<string, OcrFragment>,
+): TextRegion[] {
+  return ocrIds.map((ocrId) => {
+    const frag = fragmentsById.get(ocrId);
+    if (!frag) {
+      throw new OcrError(ErrorCodes.INVALID_OCR_REFERENCE, `Unknown OCR fragment id referenced: ${ocrId}`);
+    }
+    return {
+      ocrId,
+      x: frag.bbox.x,
+      y: frag.bbox.y,
+      width: frag.bbox.width,
+      height: frag.bbox.height,
+    };
   });
 }

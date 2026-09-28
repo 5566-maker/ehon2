@@ -6,8 +6,8 @@ import { join } from 'node:path';
 import { openDatabase, closeDatabase } from './connection.js';
 import { runMigrations } from './migrate.js';
 import { createBook, getBook, deleteBook } from './books.js';
-import { createPage, listPagesByBook, reorderPages, renumberPages, deletePage } from './pages.js';
-import { createBlock, listBlocksByPage, updateBlock, deleteBlock } from './blocks.js';
+import { createPage, getPage, listPagesByBook, reorderPages, renumberPages, deletePage, setPageOcr, getPageOcr } from './pages.js';
+import { createBlock, getBlock, listBlocksByPage, updateBlock, deleteBlock } from './blocks.js';
 import { createSession, findValidSession, hashSessionToken } from './sessions.js';
 import { createAudio, findAudio } from './audio.js';
 
@@ -97,5 +97,54 @@ describe('sqlite integration (migrations + repositories)', () => {
     assert.equal(findValidSession(hashSessionToken('old')), null);
     void s;
     void expired;
+  });
+
+  it('round-trips block regions and OCR cache', () => {
+    const book = createBook({ title: 'regions', language: 'ja' });
+    const page = createPage({ bookId: book.id, pageNumber: 1, originalImageKey: 'a', processedImageKey: null, width: 100, height: 100, mimeType: 'image/webp' });
+
+    // Legacy block without regions -> regions [].
+    const legacy = createBlock({ pageId: page.id, blockOrder: 1, originalText: 'legacy', bbox: { x: 0, y: 0, width: 0.5, height: 0.1 } });
+    assert.deepEqual(getBlock(legacy.id)?.regions, []);
+
+    // Block with regions persists them through create/get/list.
+    const withRegions = createBlock({
+      pageId: page.id,
+      blockOrder: 2,
+      originalText: 'multi',
+      bbox: { x: 0, y: 0, width: 0.8, height: 0.2 },
+      regions: [
+        { ocrId: 'ocr_001', x: 0.1, y: 0.05, width: 0.3, height: 0.1 },
+        { ocrId: 'ocr_002', x: 0.5, y: 0.05, width: 0.25, height: 0.1 },
+      ],
+    });
+    assert.deepEqual(getBlock(withRegions.id)?.regions, withRegions.regions);
+    assert.deepEqual(
+      listBlocksByPage(page.id).find((b) => b.id === withRegions.id)?.regions,
+      withRegions.regions,
+    );
+
+    // Update replaces regions; empty array clears them.
+    const updated = updateBlock(withRegions.id, { regions: [{ x: 0.2, y: 0.2, width: 0.2, height: 0.2 }] });
+    assert.deepEqual(updated?.regions, [{ x: 0.2, y: 0.2, width: 0.2, height: 0.2 }]);
+    const cleared = updateBlock(withRegions.id, { regions: [] });
+    assert.deepEqual(cleared?.regions, []);
+
+    // OCR cache round-trip.
+    assert.equal(getPageOcr(page.id), null);
+    setPageOcr(page.id, 'google', {
+      provider: 'google-vision',
+      imageWidth: 100,
+      imageHeight: 100,
+      fullText: 'abc',
+      fragments: [
+        { id: 'ocr_001', text: 'abc', bbox: { x: 0, y: 0, width: 0.5, height: 0.2 }, pageIndex: 0, blockIndex: 0, paragraphIndex: 0 },
+      ],
+    });
+    const cached = getPageOcr(page.id);
+    assert.equal(cached?.provider, 'google-vision');
+    assert.equal(cached?.fragments.length, 1);
+    assert.equal(cached?.fragments[0]?.id, 'ocr_001');
+    assert.equal(getPage(page.id)?.ocrProvider, 'google');
   });
 });

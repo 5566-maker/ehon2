@@ -99,7 +99,7 @@ export function extractFragments(
               : null,
           blockIndex,
           paragraphIndex,
-          wordIndex: pageIndex,
+          pageIndex,
         });
       });
     });

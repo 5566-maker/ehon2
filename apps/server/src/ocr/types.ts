@@ -1,5 +1,16 @@
 import type { BBox } from '@ehon2/shared';
 
+/** Error raised by the OCR layer (mirrors AiError's shape). */
+export class OcrError extends Error {
+  constructor(
+    public readonly code: string,
+    message: string,
+    public readonly cause?: unknown,
+  ) {
+    super(message);
+  }
+}
+
 /**
  * Provider-neutral OCR types.
  *
@@ -20,6 +31,7 @@ export interface OcrFragment {
   /** Provider confidence 0..1, when available. */
   confidence?: number | null;
   /** Provider hierarchy hints (from Vision fullTextAnnotation). */
+  pageIndex?: number;
   blockIndex?: number;
   paragraphIndex?: number;
   wordIndex?: number;

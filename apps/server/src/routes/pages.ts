@@ -30,7 +30,7 @@ import { fail, ok, zodDetails } from '../utils/response.js';
 import { serveMediaFile } from '../utils/media.js';
 import { AiError } from '../openai/service.js';
 import { replacePageBlocks } from '../db/blocks.js';
-import { createOcrProvider, OcrError, resolveOcrProviderName, unionBbox } from '../ocr/index.js';
+import { createOcrProvider, OcrError, regionsForOcrIds, resolveOcrProviderName, unionBbox } from '../ocr/index.js';
 import type { OcrFragment } from '../ocr/types.js';
 
 export function pagesRoutes(deps: Deps): Hono {
@@ -248,20 +248,7 @@ export function pagesRoutes(deps: Deps): Hono {
         const blocks = replacePageBlocks(
           id,
           enriched.blocks.map((b) => {
-            const regions: TextRegion[] = b.ocrIds.map((oid) => {
-              const f = fragById.get(oid);
-              if (!f) {
-                // enrichPage already validates; this is a defensive guard.
-                throw new AiError(ErrorCodes.INVALID_OCR_REFERENCE, `Unknown OCR fragment id: ${oid}`);
-              }
-              return {
-                ocrId: oid,
-                x: f.bbox.x,
-                y: f.bbox.y,
-                width: f.bbox.width,
-                height: f.bbox.height,
-              };
-            });
+            const regions: TextRegion[] = regionsForOcrIds(b.ocrIds, fragById);
             return {
               blockOrder: b.order,
               originalText: b.originalText,

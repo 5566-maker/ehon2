@@ -1,18 +1,10 @@
 import { ErrorCodes } from '@ehon2/shared';
 import type { AppEnv } from '../env.js';
 import { GoogleVisionOcrProvider } from './googleVision.js';
+import { OcrError } from './types.js';
 import type { OcrProvider } from './types.js';
 
-/** Error raised by the OCR layer (mirrors AiError's shape). */
-export class OcrError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly cause?: unknown,
-  ) {
-    super(message);
-  }
-}
+export { OcrError };
 
 export type OcrProviderName = 'google' | 'openai-legacy';
 
