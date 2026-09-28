@@ -125,6 +125,23 @@ export const TtsVoicesUpdateSchema = z
   })
   .strict();
 
+/** Settings page: per-language TTS speed overrides (partial update allowed). */
+export const TtsSpeedsUpdateSchema = z
+  .object({
+    ja: z.number().optional(),
+    zh: z.number().optional(),
+    en: z.number().optional(),
+  })
+  .strict();
+
+/** Settings page: combined TTS update (voices and/or speeds). */
+export const TtsSettingsUpdateSchema = z
+  .object({
+    voices: TtsVoicesUpdateSchema.optional(),
+    speeds: TtsSpeedsUpdateSchema.optional(),
+  })
+  .strict();
+
 /* ---------------- AI structured-output schemas ---------------- */
 
 const NullableText = z.string().nullable();

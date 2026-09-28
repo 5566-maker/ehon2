@@ -68,19 +68,54 @@ export function ttsVoiceSettingKey(language: ReaderLanguage): string {
   return `tts.voice.${language}`;
 }
 
-/** Where the effective TTS voice for a language came from. */
-export type TtsVoiceSource = 'settings' | 'env' | 'default';
+/** Where the effective TTS setting for a language came from. */
+export type TtsSettingSource = 'settings' | 'env' | 'default';
 
-/** Effective Kokoro voice per language, as reported by GET /api/settings/tts-voices. */
+/** Effective Kokoro voice per language, as reported by GET /api/settings/tts. */
 export interface TtsVoiceInfo {
   /** Effective voice id for the language. */
   effective: string;
   /** Where the effective voice came from. */
-  source: TtsVoiceSource;
+  source: TtsSettingSource;
   /** Voice explicitly chosen on the settings page, if any. */
   settingsValue: string | null;
   /** Env override, if set. */
   envValue: string | null;
   /** Selectable options for the language. */
   options: KokoroVoiceOption[];
+}
+
+/** Selectable TTS speeds: 0.5 to 2.0 in 0.1 steps (16 options). */
+export const TTS_SPEED_OPTIONS: number[] = Array.from({ length: 16 }, (_, i) => (5 + i) / 10);
+
+/** Built-in TTS speed, used when neither the settings page nor env overrides. */
+export const TTS_SPEED_DEFAULT = 1;
+
+/** Settings-table key holding the UI-chosen TTS speed for a language. */
+export function ttsSpeedSettingKey(language: ReaderLanguage): string {
+  return `tts.speed.${language}`;
+}
+
+/**
+ * Whether a value is a valid TTS speed: a finite number in 0.5–2.0 on a 0.1
+ * step. Compares integer tenths to avoid floating-point error.
+ */
+export function isValidTtsSpeed(value: unknown): value is number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return false;
+  const tenth = Math.round(value * 10);
+  return tenth >= 5 && tenth <= 20 && Math.abs(value * 10 - tenth) < 1e-9;
+}
+
+/** Effective TTS speed per language, as reported by GET /api/settings/tts. */
+export interface TtsSpeedInfo {
+  /** Effective speed for the language. */
+  effective: number;
+  /** Where the effective speed came from. */
+  source: TtsSettingSource;
+  /** Speed explicitly chosen on the settings page, if any. */
+  settingsValue: number | null;
+  /** Env override (per-language or global), if set. */
+  envValue: number | null;
+  /** Selectable options for the language. */
+  options: number[];
 }
