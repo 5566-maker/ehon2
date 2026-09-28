@@ -42,6 +42,11 @@ export class FileStorage {
     rmSync(abs, { recursive: true, force: true });
   }
 
+  /** Best-effort removal of a single file (e.g. an orphaned audio asset). */
+  remove(key: string): void {
+    rmSync(this.resolve(key), { force: true });
+  }
+
   size(key: string): number {
     return statSync(this.resolve(key)).size;
   }

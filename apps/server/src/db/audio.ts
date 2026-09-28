@@ -61,3 +61,40 @@ export function createAudio(
   if (!asset) throw new Error('Failed to create audio asset');
   return asset;
 }
+
+/** Storage keys of every audio asset attached to one text block. */
+export function listAudioKeysByBlockId(
+  blockId: string,
+  db: DatabaseSync = getDatabase(),
+): string[] {
+  const rows = db
+    .prepare('SELECT audio_key AS audio_key FROM audio_assets WHERE block_id = ?')
+    .all(blockId) as Row[];
+  return rows.map((r) => String(r.audio_key));
+}
+
+/** Storage keys of every audio asset attached to any block of a page. */
+export function listAudioKeysByPageId(pageId: string, db: DatabaseSync = getDatabase()): string[] {
+  const rows = db
+    .prepare(
+      `SELECT a.audio_key AS audio_key FROM audio_assets a
+       JOIN text_blocks b ON b.id = a.block_id
+       WHERE b.page_id = ?`,
+    )
+    .all(pageId) as Row[];
+  return rows.map((r) => String(r.audio_key));
+}
+
+/**
+ * Delete all audio asset rows for a block (e.g. its text was edited, so the
+ * cached text_hash is stale). Returns the storage keys so the caller can
+ * remove the files too.
+ */
+export function deleteAudioAssetsByBlockId(
+  blockId: string,
+  db: DatabaseSync = getDatabase(),
+): string[] {
+  const keys = listAudioKeysByBlockId(blockId, db);
+  db.prepare('DELETE FROM audio_assets WHERE block_id = ?').run(blockId);
+  return keys;
+}

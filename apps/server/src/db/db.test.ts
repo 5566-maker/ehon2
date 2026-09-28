@@ -9,7 +9,9 @@ import { createBook, getBook, deleteBook } from './books.js';
 import { createPage, getPage, listPagesByBook, reorderPages, renumberPages, deletePage, setPageOcr, getPageOcr } from './pages.js';
 import { createBlock, getBlock, listBlocksByPage, updateBlock, deleteBlock } from './blocks.js';
 import { createSession, findValidSession, hashSessionToken } from './sessions.js';
-import { createAudio, findAudio } from './audio.js';
+import { FileStorage } from '../storage/files.js';
+import { removeAudioFiles } from '../utils/audioFiles.js';
+import { createAudio, deleteAudioAssetsByBlockId, findAudio, listAudioKeysByBlockId, listAudioKeysByPageId } from './audio.js';
 
 describe('sqlite integration (migrations + repositories)', () => {
   let dir: string;
@@ -86,6 +88,39 @@ describe('sqlite integration (migrations + repositories)', () => {
     assert.deepEqual(listPagesByBook(book.id), []);
     assert.deepEqual(listBlocksByPage(page.id), []);
     assert.equal(findAudio(block.id, 'ja', 'alloy', 1, 'h'), null);
+  });
+
+  it('lists and deletes audio asset keys for orphan cleanup', () => {
+    const book = createBook({ title: 't', language: 'ja' });
+    const page = createPage({ bookId: book.id, pageNumber: 1, originalImageKey: 'a', processedImageKey: null, width: 1, height: 1, mimeType: 'image/webp' });
+    const b1 = createBlock({ pageId: page.id, blockOrder: 1, originalText: 'x', bbox: { x: 0, y: 0, width: 0.5, height: 0.1 } });
+    const b2 = createBlock({ pageId: page.id, blockOrder: 2, originalText: 'y', bbox: { x: 0, y: 0.2, width: 0.5, height: 0.1 } });
+    createAudio({ blockId: b1.id, language: 'ja', voice: 'alloy', speed: 1, audioKey: 'audio/k1.mp3', textHash: 'h1' });
+    createAudio({ blockId: b1.id, language: 'zh', voice: 'echo', speed: 1, audioKey: 'audio/k2.mp3', textHash: 'h2' });
+    createAudio({ blockId: b2.id, language: 'ja', voice: 'alloy', speed: 1, audioKey: 'audio/k3.mp3', textHash: 'h3' });
+
+    assert.deepEqual(listAudioKeysByBlockId(b1.id).sort(), ['audio/k1.mp3', 'audio/k2.mp3']);
+    assert.deepEqual(listAudioKeysByPageId(page.id).sort(), ['audio/k1.mp3', 'audio/k2.mp3', 'audio/k3.mp3']);
+
+    // Deleting a block's audio assets removes the rows and reports the keys.
+    assert.deepEqual(deleteAudioAssetsByBlockId(b1.id).sort(), ['audio/k1.mp3', 'audio/k2.mp3']);
+    assert.deepEqual(listAudioKeysByBlockId(b1.id), []);
+    assert.equal(findAudio(b1.id, 'ja', 'alloy', 1, 'h1'), null);
+    // The other block's audio is untouched.
+    assert.deepEqual(listAudioKeysByPageId(page.id), ['audio/k3.mp3']);
+  });
+
+  it('removeAudioFiles deletes the files and never throws', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ehon2-audio-'));
+    try {
+      const storage = new FileStorage(dir);
+      storage.write('books/b1/audio/x.mp3', Buffer.from([1, 2, 3]));
+      assert.ok(storage.exists('books/b1/audio/x.mp3'));
+      removeAudioFiles(storage, ['books/b1/audio/x.mp3', 'books/b1/audio/missing.mp3']);
+      assert.ok(!storage.exists('books/b1/audio/x.mp3'));
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('creates sessions and rejects expired ones', () => {

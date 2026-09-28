@@ -14,6 +14,8 @@ import {
 import type { Deps } from '../deps.js';
 import { getDatabase } from '../db/connection.js';
 import { createBlock, listBlocksByPage } from '../db/blocks.js';
+import { listAudioKeysByPageId } from '../db/audio.js';
+import { removeAudioFiles } from '../utils/audioFiles.js';
 import {
   deletePage,
   getPage,
@@ -96,12 +98,16 @@ export function pagesRoutes(deps: Deps): Hono {
     const db = getDatabase();
     const page = getPage(id, db);
     if (!page) return fail(c, 404, ErrorCodes.PAGE_NOT_FOUND, 'Page not found.');
+    const audioKeys = listAudioKeysByPageId(id, db);
     try {
       storage.removePrefix(`books/${page.bookId}/pages/${page.id}`);
     } catch (err) {
       console.error(`[pages] failed to remove media for page ${id}:`, (err as Error).message);
     }
     deletePage(id, db);
+    // Audio rows cascade with the blocks, but their MP3 files live under
+    // books/<bookId>/audio/ and need explicit removal.
+    removeAudioFiles(storage, audioKeys);
     renumberPages(page.bookId, db);
     refreshBookStatus(page.bookId, db);
     return ok(c, { deleted: true });
@@ -245,6 +251,7 @@ export function pagesRoutes(deps: Deps): Hono {
 
         // ---- Stage 3: ocr_ids -> regions, union bbox for legacy compat ----
         const fragById = new Map(fragments.map((f) => [f.id, f]));
+        const staleAudioKeys = listAudioKeysByPageId(id, db);
         const blocks = replacePageBlocks(
           id,
           enriched.blocks.map((b) => {
@@ -267,6 +274,9 @@ export function pagesRoutes(deps: Deps): Hono {
           }),
           db,
         );
+        // The replaced blocks (and their cascading audio rows) are gone;
+        // remove the orphaned MP3 files too.
+        removeAudioFiles(storage, staleAudioKeys);
         setPageStatus(id, 'ready', null, db);
         finishJob(job.id, 'success', null, null, db);
         refreshBookStatus(page.bookId, db);
@@ -299,6 +309,7 @@ export function pagesRoutes(deps: Deps): Hono {
       stage = 'legacy';
       const result = await ai.analyzePage({ imageBytes: bytes, mimeType: 'image/webp' });
 
+      const staleAudioKeys = listAudioKeysByPageId(id, db);
       const blocks = replacePageBlocks(
         id,
         result.blocks.map((b) => ({
@@ -317,6 +328,7 @@ export function pagesRoutes(deps: Deps): Hono {
         })),
         db,
       );
+      removeAudioFiles(storage, staleAudioKeys);
       setPageStatus(id, 'ready', null, db);
       finishJob(job.id, 'success', null, null, db);
       refreshBookStatus(page.bookId, db);

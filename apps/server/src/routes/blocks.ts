@@ -9,7 +9,8 @@ import {
 import type { Deps } from '../deps.js';
 import { getDatabase } from '../db/connection.js';
 import { deleteBlock, getBlock, getBlockBook, updateBlock } from '../db/blocks.js';
-import { createAudio, findAudio } from '../db/audio.js';
+import { createAudio, deleteAudioAssetsByBlockId, findAudio, listAudioKeysByBlockId } from '../db/audio.js';
+import { removeAudioFiles } from '../utils/audioFiles.js';
 import { fail, ok, zodDetails } from '../utils/response.js';
 import { AiError, selectTtsText, textHash } from '../openai/service.js';
 import {
@@ -25,6 +26,7 @@ export function blocksRoutes(deps: Deps): Hono {
 
   app.patch('/:id', async (c) => {
     const id = c.req.param('id');
+    const db = getDatabase();
     let body: unknown;
     try {
       body = await c.req.json();
@@ -35,15 +37,22 @@ export function blocksRoutes(deps: Deps): Hono {
     if (!parsed.success) {
       return fail(c, 400, ErrorCodes.INVALID_REQUEST, 'Invalid text block.', zodDetails(parsed.error));
     }
-    const block = updateBlock(id, parsed.data);
+    const block = updateBlock(id, parsed.data, db);
     if (!block) return fail(c, 404, ErrorCodes.TEXT_BLOCK_NOT_FOUND, 'Text block not found.');
+    // An edit invalidates cached audio (text_hash changes with the text);
+    // drop the now-stale rows and files so they never play outdated speech.
+    removeAudioFiles(storage, deleteAudioAssetsByBlockId(id, db));
     return ok(c, { block });
   });
 
   app.delete('/:id', (c) => {
     const id = c.req.param('id');
-    const deleted = deleteBlock(id);
+    const db = getDatabase();
+    const audioKeys = listAudioKeysByBlockId(id, db);
+    const deleted = deleteBlock(id, db);
     if (!deleted) return fail(c, 404, ErrorCodes.TEXT_BLOCK_NOT_FOUND, 'Text block not found.');
+    // DB rows cascade; remove the orphaned MP3 files too.
+    removeAudioFiles(storage, audioKeys);
     return ok(c, { deleted: true });
   });
 
