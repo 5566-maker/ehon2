@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import type { BBox, PageProcessingStatus, TextBlock, TextOrientation, VocabularyItem } from '@ehon2/shared';
+import type { BBox, PageProcessingStatus, TextBlock, TextOrientation, TextRegion, VocabularyItem } from '@ehon2/shared';
 import { apiGet, apiSend, apiUpload, errorMessage } from '../lib/api';
 import { convertHeicToJpeg, isHeicFile } from '../lib/heic';
 import { ErrorNotice, PageLoading, Spinner } from '../components/ui';
@@ -59,6 +59,14 @@ export function EditorPage() {
     x: 10, y: 10, width: 30, height: 10,
   });
   const [vocab, setVocab] = useState<VocabularyItem[]>([]);
+  /** Editable OCR regions of the selected block (synced on selection). */
+  const [regions, setRegions] = useState<TextRegion[]>([]);
+  /** OCR debug overlay. */
+  const [showOcr, setShowOcr] = useState(false);
+  const [ocr, setOcr] = useState<{
+    provider: string | null;
+    fragments: { id: string; text: string; bbox: BBox }[];
+  } | null>(null);
 
   const loadPages = useCallback(async () => {
     if (!id) return;
@@ -86,6 +94,8 @@ export function EditorPage() {
 
   useEffect(() => {
     const p = pages[pageIdx];
+    setShowOcr(false);
+    setOcr(null);
     if (p) loadBlocks(p.id).catch((err) => setError(errorMessage(err)));
   }, [pages, pageIdx, loadBlocks]);
 
@@ -105,6 +115,7 @@ export function EditorPage() {
       ...pct,
     });
     setVocab(selected.vocabulary.map((v) => ({ ...v })));
+    setRegions(selected.regions.map((r) => ({ ...r })));
   }, [selected]);
 
   const saveSelected = async () => {
@@ -113,6 +124,15 @@ export function EditorPage() {
     setSaving(true);
     try {
       const bbox = fromPercent({ x: form.x, y: form.y, width: form.width, height: form.height });
+      const cleanRegions = regions
+        .map((r) => ({
+          ocrId: r.ocrId ?? null,
+          x: Math.min(1, Math.max(0, r.x)),
+          y: Math.min(1, Math.max(0, r.y)),
+          width: Math.min(1, Math.max(0, r.width)),
+          height: Math.min(1, Math.max(0, r.height)),
+        }))
+        .filter((r) => r.width > 0 && r.height > 0);
       const data = await apiSend<{ block: TextBlock }>(`/api/text-blocks/${selected.id}`, 'PATCH', {
         originalText: form.originalText.trim(),
         normalizedText: form.normalizedText.trim() ? form.normalizedText.trim() : null,
@@ -122,6 +142,7 @@ export function EditorPage() {
         explanationZh: form.explanationZh.trim() ? form.explanationZh.trim() : null,
         orientation: form.orientation,
         bbox,
+        regions: cleanRegions,
         vocabulary: vocab.filter((v) => v.word.trim()).map((v) => ({
           word: v.word.trim(),
           reading: v.reading?.trim() ? v.reading.trim() : null,
@@ -129,10 +150,30 @@ export function EditorPage() {
         })),
       });
       setBlocks((bs) => bs.map((b) => (b.id === data.block.id ? data.block : b)));
+      setRegions(data.block.regions.map((r) => ({ ...r })));
     } catch (err) {
       setError(errorMessage(err));
     } finally {
       setSaving(false);
+    }
+  };
+
+  /** Toggle the raw OCR fragment overlay (debug). */
+  const toggleOcr = async () => {
+    const page = pages[pageIdx];
+    const next = !showOcr;
+    setShowOcr(next);
+    if (next && page) {
+      try {
+        const data = await apiGet<{
+          provider: string | null;
+          fragments: { id: string; text: string; bbox: BBox }[];
+        }>(`/api/pages/${page.id}/ocr`);
+        setOcr(data);
+      } catch (err) {
+        setError(errorMessage(err));
+        setShowOcr(false);
+      }
     }
   };
 
@@ -378,34 +419,67 @@ export function EditorPage() {
         <div>
           <div className="relative select-none overflow-hidden rounded-2xl bg-cream-dark shadow">
             <img src={page.imageUrl} alt={`第 ${page.pageNumber} 页`} className="block w-full" draggable={false} />
-            {blocks.map((b) => (
-              <button
-                key={b.id}
-                type="button"
-                aria-pressed={b.id === selectedId}
-                aria-label={`文本块 ${b.blockOrder}`}
-                onClick={() => setSelectedId(b.id === selectedId ? null : b.id)}
-                className={`absolute flex items-start justify-start rounded border-2 p-0.5 text-xs font-bold ${
-                  b.id === selectedId
-                    ? 'border-apricot bg-apricot/25 text-cocoa'
-                    : 'border-sky/70 bg-sky/15 text-cocoa'
-                }`}
-                style={{
-                  left: `${b.bbox.x * 100}%`,
-                  top: `${b.bbox.y * 100}%`,
-                  width: `${b.bbox.width * 100}%`,
-                  height: `${b.bbox.height * 100}%`,
-                }}
-              >
-                <span className="rounded-full bg-cocoa/70 px-1.5 text-[10px] text-white">{b.blockOrder}</span>
-              </button>
-            ))}
+            {blocks.map((b) => {
+              const targets = b.regions.length > 0 ? b.regions : [b.bbox];
+              return targets.map((t, i) => (
+                <button
+                  key={`${b.id}-${i}`}
+                  type="button"
+                  aria-pressed={b.id === selectedId}
+                  aria-label={`文本块 ${b.blockOrder}`}
+                  onClick={() => setSelectedId(b.id === selectedId ? null : b.id)}
+                  className={`absolute flex items-start justify-start rounded border-2 p-0.5 text-xs font-bold ${
+                    b.id === selectedId
+                      ? 'border-apricot bg-apricot/25 text-cocoa'
+                      : 'border-sky/70 bg-sky/15 text-cocoa'
+                  }`}
+                  style={{
+                    left: `${t.x * 100}%`,
+                    top: `${t.y * 100}%`,
+                    width: `${t.width * 100}%`,
+                    height: `${t.height * 100}%`,
+                  }}
+                >
+                  {i === 0 && (
+                    <span className="rounded-full bg-cocoa/70 px-1.5 text-[10px] text-white">{b.blockOrder}</span>
+                  )}
+                </button>
+              ));
+            })}
+            {/* OCR debug overlay: raw provider fragments */}
+            {showOcr &&
+              ocr?.fragments.map((f) => (
+                <div
+                  key={f.id}
+                  title={`${f.id}: ${f.text}`}
+                  className="pointer-events-none absolute rounded border border-dashed border-fuchsia-500/80"
+                  style={{
+                    left: `${f.bbox.x * 100}%`,
+                    top: `${f.bbox.y * 100}%`,
+                    width: `${f.bbox.width * 100}%`,
+                    height: `${f.bbox.height * 100}%`,
+                  }}
+                >
+                  <span className="absolute -top-4 left-0 whitespace-nowrap rounded bg-fuchsia-600/85 px-1 text-[9px] leading-4 text-white">
+                    {f.id}
+                  </span>
+                </div>
+              ))}
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
             <button type="button" onClick={addBlock} disabled={adding} className="btn-soft flex items-center gap-2 px-4 py-2 text-sm">
               {adding && <Spinner size={16} />}＋ 手动添加文本块
             </button>
-            <p className="w-full text-xs text-cocoa-soft">点击图中的编号选择文本块，然后在右侧编辑。框的坐标用百分比表示（0–100）。</p>
+            <button
+              type="button"
+              onClick={toggleOcr}
+              aria-pressed={showOcr}
+              className={`btn-soft px-4 py-2 text-sm ${showOcr ? 'ring-2 ring-fuchsia-400' : ''}`}
+            >
+              {showOcr ? '👁 隐藏 OCR 区域' : '👁 显示 OCR 区域'}
+              {ocr && showOcr ? `（${ocr.fragments.length}）` : ''}
+            </button>
+            <p className="w-full text-xs text-cocoa-soft">点击图中的编号选择文本块，然后在右侧编辑。框的坐标用百分比表示（0–100）。紫色虚线框是 OCR 原始识别区域（id 悬停可见文字）。</p>
           </div>
           {/* Block list */}
           <div className="mt-3 space-y-1">
@@ -496,6 +570,62 @@ export function EditorPage() {
                     </div>
                   ))}
                 </div>
+              </fieldset>
+
+              <fieldset>
+                <legend className="label">精确点击区域（{regions.length} 个，来自 OCR）</legend>
+                <div className="space-y-2">
+                  {regions.map((r, i) => (
+                    <div key={i} className="rounded-xl bg-cream-dark/60 p-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-semibold">
+                          区域 {i + 1}{r.ocrId ? <span className="ml-1 font-normal text-cocoa-soft">· {r.ocrId}</span> : null}
+                        </span>
+                        <button
+                          type="button"
+                          aria-label={`删除区域 ${i + 1}`}
+                          onClick={() => setRegions((rs) => rs.filter((_, j) => j !== i))}
+                          className="btn-soft px-2 py-0.5 text-xs"
+                        >
+                          删除
+                        </button>
+                      </div>
+                      <div className="mt-1 grid grid-cols-4 gap-2">
+                        {(['x', 'y', 'width', 'height'] as const).map((k) => (
+                          <div key={k}>
+                            <label className="label" htmlFor={`ed-region-${i}-${k}`}>
+                              {k === 'x' ? '左' : k === 'y' ? '上' : k === 'width' ? '宽' : '高'}
+                            </label>
+                            <input
+                              id={`ed-region-${i}-${k}`}
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={0.5}
+                              className="input px-2"
+                              value={Math.round(r[k] * 1000) / 10}
+                              onChange={(e) =>
+                                setRegions((rs) =>
+                                  rs.map((x, j) => (j === i ? { ...x, [k]: Number(e.target.value) / 100 } : x)),
+                                )
+                              }
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setRegions((rs) => [...rs, { x: 0.1, y: 0.1, width: 0.2, height: 0.05 }])}
+                    className="btn-soft px-3 py-1 text-xs"
+                  >
+                    ＋ 添加区域
+                  </button>
+                </div>
+                <p className="mt-1 text-xs text-cocoa-soft">
+                  阅读器中点击任一区域都会选中整个文本块；没有区域时回退到上面的文本框位置。
+                </p>
               </fieldset>
 
               <div>
