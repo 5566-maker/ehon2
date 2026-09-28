@@ -1,7 +1,7 @@
 import type { ReaderLanguage } from './types.js';
 
 /** AI prompt versions (stored with analysis results for future debugging). */
-export const PAGE_ANALYSIS_PROMPT_VERSION = 'page-analysis-v1';
+export const PAGE_ANALYSIS_PROMPT_VERSION = 'page-analysis-v2';
 export const COVER_ANALYSIS_PROMPT_VERSION = 'cover-analysis-v1';
 
 /** MIME types the server accepts for book images. */
