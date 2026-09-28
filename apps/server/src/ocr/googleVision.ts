@@ -67,6 +67,13 @@ export function extractFragments(
   imageWidth: number,
   imageHeight: number,
 ): { fragments: Omit<OcrFragment, 'id'>[]; fullText: string } {
+  // TODO(ocr-lines): group words into visual lines before emitting fragments.
+  // Vision returns paragraph-level bboxes here, but for picture books a
+  // "paragraph" is often the whole page, so fragments come out too coarse and
+  // misaligned with the actual text lines. The fix is to cluster
+  // paragraph.words by their vertical overlap (y-center within ~half a word
+  // height) into line groups, then emit one fragment per line with the union
+  // bbox of its words. Deliberately not implemented in this pass.
   const fullText = annotation?.text ?? '';
   const fragments: Omit<OcrFragment, 'id'>[] = [];
   const pages = annotation?.pages ?? [];

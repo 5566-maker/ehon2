@@ -108,6 +108,21 @@ TTS_SPEED_ZH=1.2
 语速优先级：朗读请求里显式传的 `speed` ＞ `TTS_SPEED_JA/ZH/EN` ＞ `TTS_SPEED`（默认 1）。
 改语速后旧缓存按原语速保留，新语速会重新生成。
 
+## 可靠性说明
+
+- **登录限流**：`POST /auth/login` 按客户端 IP 限流，5 分钟内失败 5 次后返回 `429 RATE_LIMITED`；
+  成功登录会清零该 IP 的失败计数。只限登录接口，不影响会话/登出。
+- **识别防重**：内页识别进行中（`processing`）时再请求会返回 `409 PAGE_ALREADY_PROCESSING`。
+  服务启动时会自动把卡在 `processing` 超过 `PROCESSING_STALE_MINUTES`（默认 15 分钟）的页面/任务
+  置为 `failed`（比如上次重启时正好在识别），可直接重试。
+- **超时**：`GOOGLE_VISION_TIMEOUT_MS`（默认 30000ms）中止挂起的 Google Vision 请求；
+  `OPENAI_TIMEOUT_MS`（默认 60000ms）限制 OpenAI API 调用时长（SDK 默认是 10 分钟）。
+- **批量上传**：先校验+处理全部文件，再一次性落盘；中途任何一张失败都不会留下半批数据，
+  存储写入失败会回滚整批（数据库行 + 已写文件）。
+- **绘本状态**：`processing`（有页面在跑）/ `ready`（全部页面 ready）/ `failed`（有页面失败且无在跑任务）
+  由页面状态推导，不再"粘"在 failed 上——重试成功后绘本会自动回到 ready。
+- 删除文本块/页面、编辑文本、重新识别都会清理其关联的音频缓存文件，不留孤儿 MP3。
+
 ## 使用流程
 
 1. `/login` 登录（单用户，Cookie 会话）
