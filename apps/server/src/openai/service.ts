@@ -549,14 +549,25 @@ export function textHash(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
-/** Select the TTS input text per technical spec §19. */
+/** Select the TTS input text (technical spec §19, amended 2026-09-28). */
 export function selectTtsText(
-  block: { normalizedText: string | null; originalText: string; chineseText: string | null; englishText: string | null },
+  block: {
+    readingText: string | null;
+    normalizedText: string | null;
+    originalText: string;
+    chineseText: string | null;
+    englishText: string | null;
+  },
   language: ReaderLanguage,
 ): string | null {
   switch (language) {
-    case 'ja':
-      return block.normalizedText ?? block.originalText;
+    case 'ja': {
+      // Prefer the kana reading: raw kanji makes providers guess the language,
+      // and simplified-form glyphs (e.g. 人员输送车) get read as Chinese.
+      // Pure kana is unambiguous for both Kokoro and OpenAI.
+      const reading = block.readingText?.trim();
+      return reading ? reading : (block.normalizedText ?? block.originalText);
+    }
     case 'zh':
       return block.chineseText;
     case 'en':

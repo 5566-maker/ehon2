@@ -112,6 +112,7 @@ describe('TTS helpers', () => {
 
   it('selectTtsText follows ja->normalized/original, zh->chinese, en->english', () => {
     const block = {
+      readingText: null,
       normalizedText: 'norm',
       originalText: 'orig',
       chineseText: '中文',
@@ -121,6 +122,20 @@ describe('TTS helpers', () => {
     assert.equal(selectTtsText({ ...block, normalizedText: null }, 'ja'), 'orig');
     assert.equal(selectTtsText(block, 'zh'), '中文');
     assert.equal(selectTtsText(block, 'en'), null);
+  });
+
+  it('selectTtsText prefers the kana reading for Japanese (avoids Chinese misreading)', () => {
+    const block = {
+      readingText: 'おおがた じんいん ゆそうしゃ',
+      normalizedText: '大型人员输送车',
+      originalText: '大型人员输送车',
+      chineseText: '大型人员运输车',
+      englishText: null,
+    };
+    // Kanji (esp. simplified-form glyphs) would be read as Chinese.
+    assert.equal(selectTtsText(block, 'ja'), 'おおがた じんいん ゆそうしゃ');
+    assert.equal(selectTtsText({ ...block, readingText: '   ' }, 'ja'), '大型人员输送车');
+    assert.equal(selectTtsText({ ...block, readingText: null }, 'ja'), '大型人员输送车');
   });
 
   it('resolveVoice maps "default" to configured voices', () => {
