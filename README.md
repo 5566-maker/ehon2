@@ -8,7 +8,7 @@
 - 前端：React 19 + Vite 6 + TypeScript + Tailwind CSS 4
 - 后端：Node 22 + Hono + Zod（同一容器内同时提供 API 与前端静态文件）
 - 数据：SQLite 文件（`node:sqlite`，WAL 模式）+ 本地 `media/` 目录
-- AI：OpenAI（服务端调用：Vision 分析 + TTS）
+- AI：OpenAI（服务端调用：Vision 分析）；TTS 默认走自建 Kokoro（Zeabur 内网），OpenAI TTS 仅作 fallback
 - 部署：Docker 单镜像 → GitHub Actions 自动构建 → GHCR → Zeabur / VPS
 
 ## 快速开始（本地开发）
@@ -75,6 +75,29 @@ docker compose logs -f app
 3. 服务端把 `ocr_ids` 映射为每个块的多个精确点击区域（`text_blocks.regions_json`），并保留
    各区域的并集 bbox 做旧数据兼容。阅读器一个块可点多个区域，编辑器可查看/增删/数值编辑区域，
    还能叠加显示 OCR 原始片段做 debug。
+
+## TTS（朗读）链路
+
+1. **Kokoro**（默认，`TTS_PROVIDER=kokoro`）：调用同一 Zeabur 项目内网的 Kokoro FastAPI
+  （`KOKORO_BASE_URL`，默认 `http://kokoro-fastapi-cpu.zeabur.internal:8880`），`POST /v1/audio/speech`
+   取 MP3。默认 voice：日语 `jf_alpha`、中文 `zf_xiaobei`、英语 `af_heart`，可用
+   `KOKORO_JA_VOICE` / `KOKORO_ZH_VOICE` / `KOKORO_EN_VOICE` 覆盖。
+2. **OpenAI fallback**：Kokoro 连接失败/超时/5xx/返回非法音频时，自动用
+   `OPENAI_TTS_MODEL`（默认 `gpt-4o-mini-tts`）重试一次；空文本、超长文本等本地校验错误不重试。
+3. 缓存：沿用现有音频缓存，Kokoro 的缓存 voice 会记为 `kokoro/<voice>`，与 OpenAI 缓存互不干扰，
+   旧的 OpenAI 缓存继续有效。
+
+Zeabur 环境变量（追加）：
+
+```env
+TTS_PROVIDER=kokoro
+KOKORO_BASE_URL=http://kokoro-fastapi-cpu.zeabur.internal:8880
+KOKORO_TTS_MODEL=kokoro
+# KOKORO_JA_VOICE=jf_alpha
+# KOKORO_ZH_VOICE=zf_xiaobei
+# KOKORO_EN_VOICE=af_heart
+OPENAI_TTS_MODEL=gpt-4o-mini-tts   # 仅作 fallback，保留
+```
 
 ## 使用流程
 

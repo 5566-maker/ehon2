@@ -50,12 +50,17 @@ export function audioKey(
   blockId: string,
   language: string,
   textHash: string,
+  variant?: string,
 ): string {
   assertId(bookId, 'bookId');
   assertId(blockId, 'blockId');
   if (!/^[a-z]{2}$/.test(language)) throw new Error(`Invalid language for media key: ${language}`);
   if (!/^[0-9a-f]{8,64}$/.test(textHash)) throw new Error('Invalid textHash for media key');
-  return `${BOOK_PREFIX}/${bookId}/audio/${blockId}-${language}-${textHash.slice(0, 12)}.mp3`;
+  if (variant !== undefined && !/^[a-z0-9-]{1,48}$/.test(variant)) {
+    throw new Error(`Invalid variant for media key: ${variant}`);
+  }
+  const suffix = variant ? `-${variant}` : '';
+  return `${BOOK_PREFIX}/${bookId}/audio/${blockId}-${language}-${textHash.slice(0, 12)}${suffix}.mp3`;
 }
 
 /** Directory prefix for everything belonging to one book: `books/<bookId>`. */

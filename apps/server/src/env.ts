@@ -56,6 +56,19 @@ const EnvSchema = z.object({
   // ---- TTS ----
   AUDIO_MAX_CHARS: z.coerce.number().int().min(100).max(4096).default(4000),
 
+  // ---- TTS provider (Kokoro primary, OpenAI fallback) ----
+  TTS_PROVIDER: z.enum(['kokoro', 'openai']).default('kokoro'),
+  KOKORO_BASE_URL: z
+    .string()
+    .min(1)
+    .default('http://kokoro-fastapi-cpu.zeabur.internal:8880'),
+  KOKORO_TTS_MODEL: z.string().min(1).default('kokoro'),
+  // Optional per-language Kokoro voice overrides; built-in defaults are
+  // validated against the Kokoro voice list (jf_*/zf_*/af_*).
+  KOKORO_JA_VOICE: z.string().min(1).optional(),
+  KOKORO_ZH_VOICE: z.string().min(1).optional(),
+  KOKORO_EN_VOICE: z.string().min(1).optional(),
+
   // ---- optional overrides ----
   PUBLIC_DIR: z.string().min(1).optional(),
   MIGRATIONS_DIR: z.string().min(1).optional(),

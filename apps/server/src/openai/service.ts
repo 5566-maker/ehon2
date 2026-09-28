@@ -17,6 +17,13 @@ import {
   type ReaderLanguage,
 } from '@ehon2/shared';
 import type { AppEnv } from '../env.js';
+import {
+  KokoroTtsProvider,
+  OpenAiTtsProvider,
+  TtsError,
+  resolveVoice as resolveOpenAiVoice,
+  type TtsProvider,
+} from '../tts/providers.js';
 import type { OcrFragment } from '../ocr/types.js';
 import {
   buildEnrichmentUserPrompt,
@@ -33,15 +40,8 @@ import {
  * be swapped later (see technical spec §42/§43).
  */
 
-export class AiError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly cause?: unknown,
-  ) {
-    super(message);
-  }
-}
+import { AiError } from './errors.js';
+export { AiError };
 
 function toDataUrl(bytes: Buffer, mimeType: string): string {
   return `data:${mimeType};base64,${bytes.toString('base64')}`;
@@ -99,6 +99,8 @@ export function sanitizeBbox(raw: { x: number; y: number; width: number; height:
 
 export interface AiServiceOptions {
   client?: OpenAI;
+  /** fetch implementation used by the Kokoro TTS provider (tests). */
+  kokoroFetch?: typeof fetch;
 }
 
 export class AiService {
@@ -109,7 +111,10 @@ export class AiService {
     options: AiServiceOptions = {},
   ) {
     this.client = options.client ?? new OpenAI({ apiKey: env.OPENAI_API_KEY });
+    this.kokoroFetch = options.kokoroFetch;
   }
+
+  private readonly kokoroFetch?: typeof fetch;
 
   private describeError(err: unknown): string {
     if (err instanceof OpenAI.APIError) {
@@ -476,6 +481,11 @@ export class AiService {
   /**
    * Synthesize speech. Returns MP3 bytes.
    * For Japanese the caller must pass normalized/original text (never reading_text).
+   *
+   * Provider chain: TTS_PROVIDER=kokoro tries Kokoro once, then falls back
+   * once to OpenAI on connection/timeout/5xx/invalid-audio failures.
+   * TTS_PROVIDER=openai uses OpenAI directly. Empty text is a local
+   * validation error and never triggers fallback.
    */
   async synthesizeSpeech(input: {
     text: string;
@@ -483,19 +493,52 @@ export class AiService {
     voice: string;
     speed: number;
   }): Promise<Buffer> {
-    let response;
-    try {
-      response = await this.client.audio.speech.create({
-        model: this.env.OPENAI_TTS_MODEL,
-        voice: input.voice as 'alloy',
-        input: input.text,
-        speed: input.speed,
-        response_format: 'mp3',
-      });
-    } catch (err) {
-      throw new AiError(ErrorCodes.TTS_GENERATION_FAILED, `TTS failed: ${this.describeError(err)}`, err);
+    const text = input.text?.trim();
+    if (!text) {
+      throw new AiError(ErrorCodes.TTS_TEXT_UNAVAILABLE, 'No text to synthesize.');
     }
-    return Buffer.from(await response.arrayBuffer());
+    const providers = this.ttsProviders();
+    for (let i = 0; i < providers.length; i++) {
+      const provider = providers[i]!;
+      // The OpenAI fallback always uses an OpenAI voice for the language;
+      // a Kokoro-specific voice id must not leak into the OpenAI request.
+      const voice = provider.name === 'openai' && i > 0
+        ? resolveOpenAiVoice(this.env, input.language, 'default')
+        : input.voice;
+      try {
+        return await provider.synthesize({ ...input, text, voice });
+      } catch (err) {
+        const code = err instanceof AiError ? err.code : ErrorCodes.TTS_GENERATION_FAILED;
+        const msg = err instanceof Error ? err.message : String(err);
+        const last = i === providers.length - 1;
+        if (!(err instanceof TtsError) || !err.retryable || last) {
+          if (!last) {
+            console.warn(`[tts] provider ${provider.name} failed non-retryably (${code}); not falling back`);
+          }
+          throw err instanceof AiError ? err : new AiError(code, msg, err);
+        }
+        const next = providers[i + 1]!.name;
+        console.warn(
+          `[tts] provider ${provider.name} failed (${code}): ${msg.slice(0, 160)}; ` +
+            `falling back once to ${next}`,
+        );
+      }
+    }
+    throw new AiError(ErrorCodes.TTS_GENERATION_FAILED, 'TTS failed: no provider available.');
+  }
+
+  /** Ordered TTS provider chain for the configured TTS_PROVIDER. */
+  private ttsProviders(): TtsProvider[] {
+    const openai = new OpenAiTtsProvider(this.client, this.env.OPENAI_TTS_MODEL);
+    if (this.env.TTS_PROVIDER === 'openai') return [openai];
+    return [
+      new KokoroTtsProvider({
+        baseUrl: this.env.KOKORO_BASE_URL,
+        model: this.env.KOKORO_TTS_MODEL,
+        fetchFn: this.kokoroFetch,
+      }),
+      openai,
+    ];
   }
 }
 
@@ -521,15 +564,5 @@ export function selectTtsText(
   }
 }
 
-/** Resolve "default" to the configured voice for the language. */
-export function resolveVoice(env: AppEnv, language: ReaderLanguage, voice: string): string {
-  if (voice !== 'default') return voice;
-  switch (language) {
-    case 'ja':
-      return env.DEFAULT_JA_VOICE;
-    case 'zh':
-      return env.DEFAULT_ZH_VOICE;
-    case 'en':
-      return env.DEFAULT_EN_VOICE;
-  }
-}
+/** Resolve "default" to the configured voice for the language. (moved to tts/providers.ts) */
+export { resolveVoice } from '../tts/providers.js';

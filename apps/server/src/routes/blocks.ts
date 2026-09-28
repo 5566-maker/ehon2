@@ -11,7 +11,8 @@ import { getDatabase } from '../db/connection.js';
 import { deleteBlock, getBlock, getBlockBook, updateBlock } from '../db/blocks.js';
 import { createAudio, findAudio } from '../db/audio.js';
 import { fail, ok, zodDetails } from '../utils/response.js';
-import { AiError, resolveVoice, selectTtsText, textHash } from '../openai/service.js';
+import { AiError, selectTtsText, textHash } from '../openai/service.js';
+import { resolveTtsVoice, sanitizeVoiceForKey } from '../tts/providers.js';
 
 export function blocksRoutes(deps: Deps): Hono {
   const { env, storage, ai } = deps;
@@ -60,7 +61,9 @@ export function blocksRoutes(deps: Deps): Hono {
       return fail(c, 400, ErrorCodes.INVALID_REQUEST, 'Invalid audio request.', zodDetails(parsed.error));
     }
     const { language } = parsed.data;
-    const voice = resolveVoice(env, language, parsed.data.voice);
+    const ttsVoice = resolveTtsVoice(env, language, parsed.data.voice);
+    const voice = ttsVoice.voice; // provider voice sent to the TTS request
+    const cacheVoice = ttsVoice.cacheVoice; // namespaced cache identity (kokoro/* vs OpenAI)
     const speed = Math.round(parsed.data.speed * 100) / 100;
 
     const text = selectTtsText(block, language);
@@ -77,7 +80,7 @@ export function blocksRoutes(deps: Deps): Hono {
     }
 
     const hash = textHash(text);
-    const cached = findAudio(id, language, voice, speed, hash, db);
+    const cached = findAudio(id, language, cacheVoice, speed, hash, db);
     if (cached) {
       const result: AudioRequestResult = {
         audioUrl: `/api/audio/${cached.id}`,
@@ -98,14 +101,18 @@ export function blocksRoutes(deps: Deps): Hono {
       return fail(c, 502, code, 'Speech generation failed. Please try again.');
     }
 
-    const key = audioKey(ownership.bookId, id, language, hash);
+    // Kokoro generations get a provider/voice-suffixed storage key so they
+    // never reuse a cached OpenAI file; OpenAI keeps its legacy key format.
+    const keyVariant =
+      ttsVoice.provider === 'kokoro' ? `kokoro-${sanitizeVoiceForKey(voice)}` : undefined;
+    const key = audioKey(ownership.bookId, id, language, hash, keyVariant);
     try {
       storage.write(key, mp3);
     } catch {
       return fail(c, 500, ErrorCodes.STORAGE_ERROR, 'Failed to store the generated audio.');
     }
     const asset = createAudio(
-      { blockId: id, language, voice, speed, audioKey: key, textHash: hash },
+      { blockId: id, language, voice: cacheVoice, speed, audioKey: key, textHash: hash },
       db,
     );
     const result: AudioRequestResult = {
