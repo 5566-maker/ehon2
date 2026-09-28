@@ -67,3 +67,20 @@ export function isKokoroVoice(language: ReaderLanguage, voice: string): boolean 
 export function ttsVoiceSettingKey(language: ReaderLanguage): string {
   return `tts.voice.${language}`;
 }
+
+/** Where the effective TTS voice for a language came from. */
+export type TtsVoiceSource = 'settings' | 'env' | 'default';
+
+/** Effective Kokoro voice per language, as reported by GET /api/settings/tts-voices. */
+export interface TtsVoiceInfo {
+  /** Effective voice id for the language. */
+  effective: string;
+  /** Where the effective voice came from. */
+  source: TtsVoiceSource;
+  /** Voice explicitly chosen on the settings page, if any. */
+  settingsValue: string | null;
+  /** Env override, if set. */
+  envValue: string | null;
+  /** Selectable options for the language. */
+  options: KokoroVoiceOption[];
+}

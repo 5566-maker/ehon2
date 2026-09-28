@@ -21,9 +21,18 @@ export function Layout({ children }: { children: ReactNode }) {
             </span>
             <span className="text-lg font-bold tracking-wide">Yomikiki Books</span>
           </Link>
-          <button type="button" onClick={onLogout} className="btn-soft px-4 py-1.5 text-sm">
-            退出登录
-          </button>
+          <div className="flex items-center gap-2">
+            <Link
+              to="/settings"
+              aria-label="设置"
+              className="btn-soft px-3 py-1.5 text-sm"
+            >
+              ⚙️
+            </Link>
+            <button type="button" onClick={onLogout} className="btn-soft px-4 py-1.5 text-sm">
+              退出登录
+            </button>
+          </div>
         </div>
       </header>
       <main className="mx-auto w-full max-w-5xl flex-1 px-4 py-6">{children}</main>

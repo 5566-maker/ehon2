@@ -9,6 +9,7 @@ import { BookNewPage } from './pages/BookNewPage';
 import { BookDetailPage } from './pages/BookDetailPage';
 import { ReaderPage } from './pages/ReaderPage';
 import { EditorPage } from './pages/EditorPage';
+import { SettingsPage } from './pages/SettingsPage';
 
 function RequireAuth({ children }: { children: ReactNode }) {
   const { loading, authenticated } = useAuth();
@@ -56,6 +57,14 @@ const router = createBrowserRouter([
     element: (
       <RequireAuth>
         <EditorPage />
+      </RequireAuth>
+    ),
+  },
+  {
+    path: '/settings',
+    element: (
+      <RequireAuth>
+        <SettingsPage />
       </RequireAuth>
     ),
   },
