@@ -193,6 +193,30 @@ describe('voice resolution', () => {
     assert.equal(resolveTtsVoice(env, 'ja', 'default').cacheVoice, 'kokoro/jm_kumo');
   });
 
+  it('prefers the settings-page DB voice over the env override', () => {
+    const env = { ...kokoroEnv, KOKORO_JA_VOICE: 'jf_nezumi' } as AppEnv;
+    assert.equal(kokoroVoiceFor(env, 'ja', 'jm_kumo'), 'jm_kumo');
+    assert.deepEqual(resolveTtsVoice(env, 'ja', 'default', 'jm_kumo'), {
+      provider: 'kokoro',
+      voice: 'jm_kumo',
+      cacheVoice: 'kokoro/jm_kumo',
+    });
+  });
+
+  it('lets an explicit request voice win over the DB voice', () => {
+    const r = resolveTtsVoice(kokoroEnv, 'ja', 'jf_tebukuro', 'jm_kumo');
+    assert.equal(r.voice, 'jf_tebukuro');
+    assert.equal(r.cacheVoice, 'kokoro/jf_tebukuro');
+  });
+
+  it('ignores Kokoro voice settings when TTS_PROVIDER=openai', () => {
+    const env = { ...kokoroEnv, TTS_PROVIDER: 'openai' } as AppEnv;
+    const r = resolveTtsVoice(env, 'zh', 'default', 'zm_yunxia');
+    assert.equal(r.provider, 'openai');
+    assert.equal(r.voice, 'echo');
+    assert.equal(r.cacheVoice, 'echo');
+  });
+
   it('passes explicit voices through to Kokoro', () => {
     const r = resolveTtsVoice(kokoroEnv, 'ja', 'jf_nezumi');
     assert.equal(r.voice, 'jf_nezumi');
@@ -211,6 +235,13 @@ describe('voice resolution', () => {
     assert.equal(resolveTtsSpeed(env, 'ja'), 1.2);
     assert.equal(resolveTtsSpeed(env, 'zh'), 1.25);
     assert.equal(resolveTtsSpeed(env, 'en'), 1);
+  });
+
+  it('resolveTtsSpeed prefers the settings-page DB speed over env', () => {
+    const env = { TTS_SPEED: 1, TTS_SPEED_JA: 1.2 } as AppEnv;
+    assert.equal(resolveTtsSpeed(env, 'ja', 1.5), 1.5);
+    assert.equal(resolveTtsSpeed(env, 'ja', null), 1.2);
+    assert.equal(resolveTtsSpeed(env, 'ja', undefined), 1.2);
   });
 
   it('keeps legacy cache identity for the OpenAI provider', () => {
