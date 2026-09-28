@@ -40,10 +40,18 @@ export interface TextRegion {
 /** Normalized, provider-neutral OCR cache stored on pages.ocr_json. */
 export interface PageOcrCache {
   provider: string;
+  /** Image dimensions the fragment bboxes are relative to (when known). */
+  imageWidth?: number;
+  imageHeight?: number;
+  /** Full concatenated text (when the provider supplies it). */
+  fullText?: string;
   fragments: {
     id: string;
     text: string;
     bbox: BBox;
+    pageIndex?: number;
+    blockIndex?: number;
+    paragraphIndex?: number;
   }[];
 }
 

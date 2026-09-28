@@ -72,6 +72,7 @@ describe('sanitizeNormalizedBbox', () => {
 
   it('clamps origin and shrinks overflow', () => {
     const b = sanitizeNormalizedBbox({ x: -0.1, y: 0.9, width: 0.5, height: 0.5 });
+    assert.ok(b, 'expected a bbox');
     assert.equal(b.x, 0);
     assert.ok(b.width <= 1 && b.height <= 1 - 0.9);
   });

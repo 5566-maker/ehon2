@@ -49,7 +49,9 @@ docker compose up -d --build
    首次推送后到 GitHub 的 Packages 页面把 `ehon2` 镜像设为 **Public**（否则 Zeabur 拉取需要鉴权）。
 2. Zeabur 新建 Service → Deploy from Image → `ghcr.io/5566-maker/ehon2:latest`。
 3. 在 Variables 中填入 `.env.example` 里的必填项（`OPENAI_API_KEY`、`AUTH_USERNAME`、
-   `AUTH_PASSWORD_HASH`、`SESSION_SECRET`），`DATA_DIR=/data`。
+   `AUTH_PASSWORD_HASH`、`SESSION_SECRET`），`DATA_DIR=/data`。内页识别另需
+   `GOOGLE_VISION_API_KEY`（不设则服务照常启动，但内页识别会明确报错），以及
+   `OPENAI_VISION_MODEL=gpt-4o`（enrichment 模型）。
 4. 添加 Volume，挂载路径 `/data`（持久化 SQLite + 媒体文件）。
 5. 端口使用 `PORT`（默认 3000），绑定域名，开启 HTTPS。
 

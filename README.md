@@ -51,11 +51,25 @@ docker compose logs -f app
    Actions 会自动构建并推送镜像：`ghcr.io/5566-maker/ehon2:latest`
 2. 在 GitHub Packages 把镜像设为 **Public**（否则 Zeabur 无法免鉴权拉取）
 3. Zeabur 新建 Service → 选择该镜像，配置：
-   - 环境变量：`OPENAI_API_KEY`、`AUTH_USERNAME`、`AUTH_PASSWORD_HASH`、`SESSION_SECRET`（必填）
+   - 环境变量（必填）：`OPENAI_API_KEY`、`AUTH_USERNAME`、`AUTH_PASSWORD_HASH`、`SESSION_SECRET`
+   - 环境变量（内页识别）：`GOOGLE_VISION_API_KEY`（不设则服务照常启动，但内页识别会报错）；
+     `OCR_PROVIDER=google`（默认）；`OPENAI_VISION_MODEL=gpt-4o`（enrichment 模型，已验证可用，
+     不要用返回 400 的 `gpt-5.6-luna`）
    - Volume：挂载到 `/data`（持久化数据库与媒体）
    - 端口：3000（`PORT` 环境变量可改）
 
 详见 [docs/DOCKER_ADAPTATION.md](docs/DOCKER_ADAPTATION.md)。
+
+## AI 识别链路（内页）
+
+1. **Google Vision OCR**（`DOCUMENT_TEXT_DETECTION`）：识别文字 + 精确坐标，按段落切分为
+   `ocr_001`、`ocr_002`…… 等稳定片段。结果缓存进 `pages.ocr_json`，换 enrichment 模型或 prompt
+   时只重跑 OpenAI，不再花 OCR 的钱；只有 `forceOcr=true` 才会重新调用 Google。
+2. **OpenAI enrichment**（`OPENAI_VISION_MODEL`，默认 `gpt-4o`）：看图 + OCR 片段，把片段按
+   `ocr_ids` 分组成阅读块，做注音/翻译/讲解/生词。**不返回坐标**，引用了不存在的 OCR id 会直接报错。
+3. 服务端把 `ocr_ids` 映射为每个块的多个精确点击区域（`text_blocks.regions_json`），并保留
+   各区域的并集 bbox 做旧数据兼容。阅读器一个块可点多个区域，编辑器可查看/增删/数值编辑区域，
+   还能叠加显示 OCR 原始片段做 debug。
 
 ## 使用流程
 
