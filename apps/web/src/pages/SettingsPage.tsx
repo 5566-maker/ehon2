@@ -3,13 +3,15 @@ import {
   LANGUAGE_LABELS,
   READER_LANGUAGES,
   type ReaderLanguage,
+  type TtsSpeedInfo,
   type TtsVoiceInfo,
 } from '@ehon2/shared';
 import { apiGet, apiSend, errorMessage } from '../lib/api';
 import { ErrorNotice, PageLoading } from '../components/ui';
 
-interface TtsVoicesResponse {
+interface TtsSettingsResponse {
   voices: Record<ReaderLanguage, TtsVoiceInfo>;
+  speeds: Record<ReaderLanguage, TtsSpeedInfo>;
 }
 
 const SOURCE_LABELS: Record<TtsVoiceInfo['source'], string> = {
@@ -21,20 +23,26 @@ const SOURCE_LABELS: Record<TtsVoiceInfo['source'], string> = {
 const GENDER_LABELS = { female: '女声', male: '男声' } as const;
 
 export function SettingsPage() {
-  const [data, setData] = useState<TtsVoicesResponse | null>(null);
-  const [draft, setDraft] = useState<Record<ReaderLanguage, string> | null>(null);
+  const [data, setData] = useState<TtsSettingsResponse | null>(null);
+  const [draftVoices, setDraftVoices] = useState<Record<ReaderLanguage, string> | null>(null);
+  const [draftSpeeds, setDraftSpeeds] = useState<Record<ReaderLanguage, number> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
     try {
-      const res = await apiGet<TtsVoicesResponse>('/api/settings/tts-voices');
+      const res = await apiGet<TtsSettingsResponse>('/api/settings/tts');
       setData(res);
-      setDraft({
+      setDraftVoices({
         ja: res.voices.ja.effective,
         zh: res.voices.zh.effective,
         en: res.voices.en.effective,
+      });
+      setDraftSpeeds({
+        ja: res.speeds.ja.effective,
+        zh: res.speeds.zh.effective,
+        en: res.speeds.en.effective,
       });
       setError(null);
     } catch (err) {
@@ -47,14 +55,17 @@ export function SettingsPage() {
   }, []);
 
   const save = async () => {
-    if (!draft || saving) return;
+    if (!draftVoices || !draftSpeeds || saving) return;
     setSaving(true);
     setError(null);
     setNotice(null);
     try {
-      const res = await apiSend<TtsVoicesResponse>('/api/settings/tts-voices', 'PUT', draft);
+      const res = await apiSend<TtsSettingsResponse>('/api/settings/tts', 'PUT', {
+        voices: draftVoices,
+        speeds: draftSpeeds,
+      });
       setData(res);
-      setNotice('已保存。新朗读将使用新声音。');
+      setNotice('已保存。新朗读将使用新的声音和语速。');
     } catch (err) {
       setError(errorMessage(err));
     } finally {
@@ -62,16 +73,18 @@ export function SettingsPage() {
     }
   };
 
-  if (!data || !draft) {
+  if (!data || !draftVoices || !draftSpeeds) {
     return error ? <ErrorNotice message={error} /> : <PageLoading />;
   }
 
-  const dirty = READER_LANGUAGES.some((l) => draft[l] !== data.voices[l].effective);
+  const dirty =
+    READER_LANGUAGES.some((l) => draftVoices[l] !== data.voices[l].effective) ||
+    READER_LANGUAGES.some((l) => draftSpeeds[l] !== data.speeds[l].effective);
 
   return (
     <div className="mx-auto max-w-2xl">
       <h1 className="text-xl font-bold">设置</h1>
-      <p className="mt-1 text-sm text-cocoa-soft">选择 Kokoro 朗读在每种语言下使用的声音。</p>
+      <p className="mt-1 text-sm text-cocoa-soft">选择 Kokoro 朗读在每种语言下使用的声音和语速。</p>
 
       {error && (
         <div className="mt-4">
@@ -84,26 +97,52 @@ export function SettingsPage() {
 
       <div className="mt-6 space-y-4">
         {READER_LANGUAGES.map((lang) => {
-          const info = data.voices[lang];
+          const voice = data.voices[lang];
+          const speed = data.speeds[lang];
           return (
             <div key={lang} className="rounded-2xl border border-cocoa/10 bg-white/60 p-4">
-              <div className="flex items-center justify-between">
+              <p className="text-sm font-semibold">{LANGUAGE_LABELS[lang]}朗读</p>
+
+              <div className="mt-3 flex items-center justify-between">
                 <label className="label" htmlFor={`voice-${lang}`}>
-                  {LANGUAGE_LABELS[lang]}朗读声音
+                  声音
                 </label>
                 <span className="text-xs text-cocoa-soft">
-                  当前：{info.effective}（{SOURCE_LABELS[info.source]}）
+                  当前：{voice.effective}（{SOURCE_LABELS[voice.source]}）
                 </span>
               </div>
               <select
                 id={`voice-${lang}`}
-                className="input mt-2"
-                value={draft[lang]}
-                onChange={(e) => setDraft({ ...draft, [lang]: e.target.value })}
+                className="input mt-1"
+                value={draftVoices[lang]}
+                onChange={(e) => setDraftVoices({ ...draftVoices, [lang]: e.target.value })}
               >
-                {info.options.map((o) => (
+                {voice.options.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.id}（{GENDER_LABELS[o.gender]}）
+                  </option>
+                ))}
+              </select>
+
+              <div className="mt-3 flex items-center justify-between">
+                <label className="label" htmlFor={`speed-${lang}`}>
+                  语速
+                </label>
+                <span className="text-xs text-cocoa-soft">
+                  当前：{speed.effective.toFixed(1)}x（{SOURCE_LABELS[speed.source]}）
+                </span>
+              </div>
+              <select
+                id={`speed-${lang}`}
+                className="input mt-1"
+                value={String(draftSpeeds[lang])}
+                onChange={(e) =>
+                  setDraftSpeeds({ ...draftSpeeds, [lang]: Number(e.target.value) })
+                }
+              >
+                {speed.options.map((o) => (
+                  <option key={o} value={String(o)}>
+                    {o.toFixed(1)}x
                   </option>
                 ))}
               </select>
@@ -113,9 +152,9 @@ export function SettingsPage() {
       </div>
 
       <p className="mt-4 text-xs text-cocoa-soft">
-        更换声音后，已缓存的旧声音音频仍保留，新朗读使用新声音。环境变量
-        KOKORO_JA_VOICE / KOKORO_ZH_VOICE / KOKORO_EN_VOICE
-        可被此处的页面设置覆盖。
+        更换声音或语速后，已缓存的旧音频仍保留，新朗读使用新设置。环境变量
+        KOKORO_JA_VOICE / KOKORO_ZH_VOICE / KOKORO_EN_VOICE 与 TTS_SPEED_JA /
+        TTS_SPEED_ZH / TTS_SPEED_EN / TTS_SPEED 可被此处的页面设置覆盖。
       </p>
 
       <button
