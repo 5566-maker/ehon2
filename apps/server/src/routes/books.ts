@@ -32,6 +32,7 @@ import {
 } from '../db/blocks.js';
 import {
   createPage,
+  deletePage,
   listPagesByBook,
   maxPageNumber,
   reorderPages,
@@ -317,8 +318,16 @@ export function booksRoutes(deps: Deps): Hono {
       );
     }
 
-    const created: { id: string; pageNumber: number; status: string }[] = [];
-    let nextNumber = maxPageNumber(id, db) + 1;
+    // ---- Phase 1: validate + process every file without touching the DB or
+    // storage, so one bad file can't leave a half-created batch behind. ----
+    interface PreparedPage {
+      original: Buffer;
+      extension: string;
+      webp: Buffer;
+      width: number;
+      height: number;
+    }
+    const prepared: PreparedPage[] = [];
     for (const file of files) {
       let upload;
       try {
@@ -336,31 +345,59 @@ export function booksRoutes(deps: Deps): Hono {
       } catch {
         return fail(c, 422, ErrorCodes.IMAGE_PROCESSING_FAILED, `Unable to decode ${file.name}.`);
       }
-      const pageNumber = nextNumber++;
-      // Page ids are random; create the row first to obtain a stable id for keys.
-      const page = createPage({
-        bookId: id,
-        pageNumber,
-        originalImageKey: pageOriginalKey(id, 'tmp', upload.extension),
-        processedImageKey: null,
+      prepared.push({
+        original: upload.bytes,
+        extension: upload.extension,
+        webp: processed.webp,
         width: processed.width,
         height: processed.height,
-        mimeType: 'image/webp',
       });
-      try {
-        storage.write(pageOriginalKey(id, page.id, upload.extension), upload.bytes);
-        storage.write(pageProcessedKey(id, page.id), processed.webp);
-      } catch {
-        // Storage failed: remove the placeholder row so no orphan page remains.
-        db.prepare('DELETE FROM pages WHERE id = ?').run(page.id);
-        return fail(c, 500, ErrorCodes.STORAGE_ERROR, 'Failed to store the page image.');
+    }
+
+    // ---- Phase 2: persist everything. If a storage write fails mid-batch,
+    // roll back the whole batch (rows + files) so there are no page-number
+    // gaps and no orphan rows. ----
+    const created: { id: string; pageNumber: number; status: string }[] = [];
+    const createdPageIds: string[] = [];
+    try {
+      let nextNumber = maxPageNumber(id, db) + 1;
+      for (const page of prepared) {
+        const pageNumber = nextNumber++;
+        // Page ids are random; create the row first to obtain a stable id for keys.
+        const row = createPage(
+          {
+            bookId: id,
+            pageNumber,
+            originalImageKey: pageOriginalKey(id, 'tmp', page.extension),
+            processedImageKey: null,
+            width: page.width,
+            height: page.height,
+            mimeType: 'image/webp',
+          },
+          db,
+        );
+        // Register the row BEFORE the storage writes: if a write throws, the
+        // row must still be rolled back below.
+        createdPageIds.push(row.id);
+        storage.write(pageOriginalKey(id, row.id, page.extension), page.original);
+        storage.write(pageProcessedKey(id, row.id), page.webp);
+        db.prepare('UPDATE pages SET original_image_key = ?, processed_image_key = ? WHERE id = ?').run(
+          pageOriginalKey(id, row.id, page.extension),
+          pageProcessedKey(id, row.id),
+          row.id,
+        );
+        created.push({ id: row.id, pageNumber, status: 'pending' });
       }
-      db.prepare('UPDATE pages SET original_image_key = ?, processed_image_key = ? WHERE id = ?').run(
-        pageOriginalKey(id, page.id, upload.extension),
-        pageProcessedKey(id, page.id),
-        page.id,
-      );
-      created.push({ id: page.id, pageNumber, status: 'pending' });
+    } catch {
+      for (const pageId of createdPageIds) {
+        deletePage(pageId, db);
+        try {
+          storage.removePrefix(`books/${id}/pages/${pageId}`);
+        } catch (err) {
+          console.error(`[books] failed to clean up page dir for ${pageId}:`, (err as Error).message);
+        }
+      }
+      return fail(c, 500, ErrorCodes.STORAGE_ERROR, 'Failed to store the page images; no pages were created.');
     }
     refreshBookStatus(id, db);
     return ok(c, { pages: created }, 201);
