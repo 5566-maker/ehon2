@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { openDatabase, closeDatabase } from './connection.js';
+import { openDatabase, closeDatabase, getDatabase } from './connection.js';
 import { runMigrations } from './migrate.js';
 import { createBook, getBook, deleteBook } from './books.js';
-import { createPage, getPage, listPagesByBook, reorderPages, renumberPages, deletePage, setPageOcr, getPageOcr } from './pages.js';
+import { createPage, getPage, listPagesByBook, reorderPages, renumberPages, deletePage, setPageOcr, getPageOcr, setPageStatus } from './pages.js';
+import { createJob } from './jobs.js';
+import { recoverStaleProcessing } from './recovery.js';
 import { createBlock, getBlock, listBlocksByPage, updateBlock, deleteBlock } from './blocks.js';
 import { createSession, findValidSession, hashSessionToken } from './sessions.js';
 import { FileStorage } from '../storage/files.js';
@@ -108,6 +110,27 @@ describe('sqlite integration (migrations + repositories)', () => {
     assert.equal(findAudio(b1.id, 'ja', 'alloy', 1, 'h1'), null);
     // The other block's audio is untouched.
     assert.deepEqual(listAudioKeysByPageId(page.id), ['audio/k3.mp3']);
+  });
+
+  it('recovers pages/jobs stuck in processing past the threshold', () => {
+    const db = getDatabase();
+    const book = createBook({ title: 't', language: 'ja' });
+    const stale = createPage({ bookId: book.id, pageNumber: 1, originalImageKey: 'a', processedImageKey: null, width: 1, height: 1, mimeType: 'image/webp' });
+    const fresh = createPage({ bookId: book.id, pageNumber: 2, originalImageKey: 'b', processedImageKey: null, width: 1, height: 1, mimeType: 'image/webp' });
+    setPageStatus(stale.id, 'processing');
+    setPageStatus(fresh.id, 'processing');
+    const old = new Date(Date.now() - 20 * 60_000).toISOString();
+    db.prepare('UPDATE pages SET updated_at = ? WHERE id = ?').run(old, stale.id);
+    const staleJob = createJob('page', stale.id);
+    db.prepare('UPDATE processing_jobs SET updated_at = ? WHERE id = ?').run(old, staleJob.id);
+
+    const recovered = recoverStaleProcessing(db, 15);
+    assert.equal(recovered.pages, 1);
+    assert.equal(recovered.jobs, 1);
+    assert.equal(getPage(stale.id)?.ocrStatus, 'failed');
+    assert.match(getPage(stale.id)?.processingError ?? '', /interrupted/);
+    // A fresh, actively-running page is never touched.
+    assert.equal(getPage(fresh.id)?.ocrStatus, 'processing');
   });
 
   it('removeAudioFiles deletes the files and never throws', () => {

@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { loadEnv } from './env.js';
 import { openDatabase } from './db/connection.js';
 import { runMigrations } from './db/migrate.js';
+import { recoverStaleProcessing } from './db/recovery.js';
 import { purgeExpiredSessions } from './db/sessions.js';
 import { FileStorage } from './storage/files.js';
 import { AiService } from './openai/service.js';
@@ -17,6 +18,15 @@ runMigrations(db, env.MIGRATIONS_DIR);
 
 const purged = purgeExpiredSessions(db);
 if (purged > 0) console.log(`[auth] purged ${purged} expired session(s)`);
+
+// Reset pages/jobs stuck in "processing" by an interrupted run (restart
+// mid-OCR) so they don't stay in that state forever.
+const recovered = recoverStaleProcessing(db, env.PROCESSING_STALE_MINUTES);
+if (recovered.pages > 0 || recovered.jobs > 0) {
+  console.log(
+    `[recovery] reset ${recovered.pages} stale page(s) and ${recovered.jobs} stale job(s) to failed`,
+  );
+}
 
 const deps: Deps = {
   env,

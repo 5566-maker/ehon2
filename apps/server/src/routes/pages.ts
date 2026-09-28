@@ -159,6 +159,11 @@ export function pagesRoutes(deps: Deps): Hono {
     const db = getDatabase();
     const page = getPage(id, db);
     if (!page) return fail(c, 404, ErrorCodes.PAGE_NOT_FOUND, 'Page not found.');
+    // A second process request while one is already running would race two
+    // OCR/enrichment pipelines on the same page — reject it outright.
+    if (page.ocrStatus === 'processing') {
+      return fail(c, 409, ErrorCodes.PAGE_ALREADY_PROCESSING, 'This page is already being processed.');
+    }
 
     let body: unknown = {};
     try {

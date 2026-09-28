@@ -53,6 +53,10 @@ const EnvSchema = z.object({
   // TTS). The SDK default is 10 minutes; 60s keeps failures visible fast.
   OPENAI_TIMEOUT_MS: z.coerce.number().int().positive().max(600000).default(60000),
 
+  // Pages/jobs stuck in "processing" longer than this are reset to failed
+  // on startup (e.g. the server restarted mid-OCR).
+  PROCESSING_STALE_MINUTES: z.coerce.number().int().positive().max(1440).default(15),
+
   // ---- uploads / images ----
   IMAGE_MAX_DIM: z.coerce.number().int().min(256).max(4096).default(1600),
   IMAGE_QUALITY: z.coerce.number().int().min(1).max(100).default(80),
