@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useTtsPlayer } from '../hooks/useTtsPlayer.js';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { LANGUAGE_LABELS, type BBox, type ReaderBlock, type ReaderData, type ReaderLanguage } from '@ehon2/shared';
 import { apiGet, apiSend, errorMessage } from '../lib/api';
@@ -38,7 +39,13 @@ export function ReaderPage() {
   const [ttsLoading, setTtsLoading] = useState<{ blockId: string; lang: ReaderLanguage } | null>(null);
   const [ttsError, setTtsError] = useState<string | null>(null);
   const [playing, setPlaying] = useState<{ blockId: string; lang: ReaderLanguage } | null>(null);
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const player = useTtsPlayer({
+    onEnded: () => setPlaying(null),
+    onError: () => {
+      setTtsError('音频播放失败，请重试。');
+      setPlaying(null);
+    },
+  });
   const touchX = useRef<number | null>(null);
 
   const load = useCallback(async () => {
@@ -56,14 +63,6 @@ export function ReaderPage() {
     void load();
   }, [load]);
 
-  // Stop audio when leaving the page or switching pages.
-  useEffect(() => {
-    return () => {
-      audioRef.current?.pause();
-      audioRef.current = null;
-    };
-  }, []);
-
   const page = data?.pages[pageIdx] ?? null;
   const totalPages = data?.pages.length ?? 0;
 
@@ -80,8 +79,7 @@ export function ReaderPage() {
   );
 
   const stopAudio = () => {
-    audioRef.current?.pause();
-    audioRef.current = null;
+    player.stop();
     setPlaying(null);
   };
 
@@ -96,34 +94,12 @@ export function ReaderPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [goPage]);
 
-  // Wait until the clip is buffered enough to start cleanly. Playing a
-  // fresh Audio element too early clips the first syllable on first play
-  // (cold media pipeline); the second play sounds fine because the file is
-  // already cached. Never rejects: falls back to playing anyway on timeout.
-  const waitForCanPlay = (audio: HTMLAudioElement, timeoutMs = 10000): Promise<void> =>
-    new Promise((resolve) => {
-      if (audio.readyState >= 3) return resolve(); // HAVE_FUTURE_DATA
-      const done = () => {
-        window.clearTimeout(timer);
-        audio.removeEventListener('canplay', done);
-        audio.removeEventListener('error', done);
-        resolve();
-      };
-      const timer = window.setTimeout(done, timeoutMs);
-      audio.addEventListener('canplay', done);
-      audio.addEventListener('error', done);
-      audio.load();
-    });
-
   const playTts = async (block: ReaderBlock, language: ReaderLanguage) => {
-    if (playing && playing.blockId === block.id && playing.lang === language && audioRef.current) {
+    const key = `${block.id}:${language}`;
+    if (playing && playing.blockId === block.id && playing.lang === language && player.isActive()) {
       // Toggle pause for the currently playing block+language.
-      if (audioRef.current.paused) {
-        await audioRef.current.play();
-      } else {
-        audioRef.current.pause();
-        setPlaying(null);
-      }
+      const paused = await player.toggle();
+      if (paused !== null) setPlaying(paused ? null : { blockId: block.id, lang: language });
       return;
     }
     stopAudio();
@@ -133,18 +109,10 @@ export function ReaderPage() {
       const res = await apiSend<{ audioUrl: string }>(`/api/text-blocks/${block.id}/audio`, 'POST', {
         language,
       });
-      const audio = new Audio(res.audioUrl);
-      audio.preload = 'auto';
-      audioRef.current = audio;
-      audio.onended = () => setPlaying(null);
-      audio.onerror = () => {
-        setTtsError('音频播放失败，请重试。');
-        setPlaying(null);
-      };
-      await waitForCanPlay(audio);
-      if (audioRef.current !== audio) return; // superseded by a newer request
-      await audio.play();
-      setPlaying({ blockId: block.id, lang: language });
+      // The player fully decodes the clip before starting (plus a short
+      // leading silence pad), so the first syllable is never clipped.
+      const started = await player.play(key, res.audioUrl);
+      if (started) setPlaying({ blockId: block.id, lang: language });
     } catch (err) {
       setTtsError(errorMessage(err));
     } finally {
