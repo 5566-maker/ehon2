@@ -53,8 +53,8 @@ docker compose logs -f app
 3. Zeabur 新建 Service → 选择该镜像，配置：
    - 环境变量（必填）：`OPENAI_API_KEY`、`AUTH_USERNAME`、`AUTH_PASSWORD_HASH`、`SESSION_SECRET`
    - 环境变量（内页识别）：`GOOGLE_VISION_API_KEY`（不设则服务照常启动，但内页识别会报错）；
-     `OCR_PROVIDER=google`（默认）；`OPENAI_VISION_MODEL=gpt-4o`（enrichment 模型，已验证可用，
-     不要用返回 400 的 `gpt-5.6-luna`）
+     `OCR_PROVIDER=google`（默认）；`OPENAI_VISION_MODEL=gpt-5.6-luna`（enrichment 模型，推荐），
+     `OPENAI_ENRICHMENT_FALLBACK=gpt-5.6-sol`（enrichment 失败时自动重试一次，可选）
    - Volume：挂载到 `/data`（持久化数据库与媒体）
    - 端口：3000（`PORT` 环境变量可改）
 
@@ -65,8 +65,13 @@ docker compose logs -f app
 1. **Google Vision OCR**（`DOCUMENT_TEXT_DETECTION`）：识别文字 + 精确坐标，按段落切分为
    `ocr_001`、`ocr_002`…… 等稳定片段。结果缓存进 `pages.ocr_json`，换 enrichment 模型或 prompt
    时只重跑 OpenAI，不再花 OCR 的钱；只有 `forceOcr=true` 才会重新调用 Google。
-2. **OpenAI enrichment**（`OPENAI_VISION_MODEL`，默认 `gpt-4o`）：看图 + OCR 片段，把片段按
-   `ocr_ids` 分组成阅读块，做注音/翻译/讲解/生词。**不返回坐标**，引用了不存在的 OCR id 会直接报错。
+2. **OpenAI enrichment**（`OPENAI_VISION_MODEL`，推荐 `gpt-5.6-luna`；`gpt-4o` 也可用）：看图 +
+   OCR 片段，把片段按 `ocr_ids` 分组成阅读块，做注音/翻译/讲解/生词。**不返回坐标**，引用了不
+   存在的 OCR id 会直接报错。
+   - 模型兼容性：`gpt-5.6-luna` / `gpt-5.6-sol` 不接受显式的 `temperature` 参数（带上会 HTTP 400），
+     服务端对这类模型会自动省略该字段；此前的 400 报错就是这个原因，现已修复。
+   - 可选 `OPENAI_ENRICHMENT_FALLBACK=gpt-5.6-sol`：主模型因 OpenAI 侧错误或返回非法数据失败时，
+     自动用该模型重试一次（Google Vision OCR 不重试；引用未知 OCR id 等本地校验错误不重试）。
 3. 服务端把 `ocr_ids` 映射为每个块的多个精确点击区域（`text_blocks.regions_json`），并保留
    各区域的并集 bbox 做旧数据兼容。阅读器一个块可点多个区域，编辑器可查看/增删/数值编辑区域，
    还能叠加显示 OCR 原始片段做 debug。

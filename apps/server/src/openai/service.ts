@@ -61,6 +61,28 @@ export function supportsCustomTemperature(model: string): boolean {
   return !FIXED_TEMPERATURE_MODEL_PATTERNS.some((re) => re.test(model.trim()));
 }
 
+/**
+ * Enrichment failures worth exactly one retry with the fallback model: the
+ * provider request itself failed (network, 4xx/5xx) or the model returned
+ * something unusable (empty, non-JSON, schema mismatch). Local validation
+ * failures such as unknown ocr_id references are deterministic checks
+ * against our own input and are not retried.
+ */
+const RETRYABLE_ENRICHMENT_CODES: ReadonlySet<string> = new Set([
+  ErrorCodes.PAGE_ANALYSIS_FAILED,
+  ErrorCodes.AI_RESPONSE_INVALID,
+]);
+
+function isRetryableEnrichmentError(err: unknown): boolean {
+  return err instanceof AiError && RETRYABLE_ENRICHMENT_CODES.has(err.code);
+}
+
+/** Single-line error summary for logs — no prompts, images, or secrets. */
+function shortError(err: unknown, max = 160): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg.length > max ? `${msg.slice(0, max)}\u2026` : msg;
+}
+
 /** Clamp a raw AI bbox into valid 0..1 bounds; returns null if unusable. */
 export function sanitizeBbox(raw: { x: number; y: number; width: number; height: number }): BBox | null {
   const clamp = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : NaN);
@@ -309,12 +331,41 @@ export class AiService {
    * The model receives the page image plus OCR fragment ids/text/geometry,
    * but must NOT return any geometry — every returned ocr_id is validated
    * against the input and unknown ids are rejected.
+   *
+   * If OPENAI_ENRICHMENT_FALLBACK is configured and the primary model fails
+   * with a provider error or an invalid AI response, enrichment is retried
+   * exactly once with the fallback model. Google Vision OCR is never
+   * retried; local validation errors are not retried either.
    */
   async enrichPage(input: {
     imageBytes: Buffer;
     mimeType: string;
     fragments: OcrFragment[];
   }): Promise<PageEnrichmentResult> {
+    const primary = this.env.OPENAI_VISION_MODEL;
+    const fallback = this.env.OPENAI_ENRICHMENT_FALLBACK;
+    try {
+      return await this.enrichPageWithModel(input, primary);
+    } catch (err) {
+      if (!isRetryableEnrichmentError(err) || !fallback || fallback === primary) throw err;
+      const code = err instanceof AiError ? err.code : 'UNKNOWN';
+      console.warn(
+        `[enrichment] primary model ${primary} failed (${code}): ${shortError(err)}; ` +
+          `retrying once with fallback ${fallback}`,
+      );
+      return await this.enrichPageWithModel(input, fallback);
+    }
+  }
+
+  /** One enrichment attempt with a single model — no retry inside. */
+  private async enrichPageWithModel(
+    input: {
+      imageBytes: Buffer;
+      mimeType: string;
+      fragments: OcrFragment[];
+    },
+    model: string,
+  ): Promise<PageEnrichmentResult> {
     const knownIds = new Set(input.fragments.map((f) => f.id));
     const fragmentsJson = JSON.stringify(
       input.fragments.map((f) => ({
@@ -326,7 +377,7 @@ export class AiService {
     );
 
     const raw = await this.chatJson({
-      model: this.env.OPENAI_VISION_MODEL,
+      model,
       system: PAGE_ENRICHMENT_SYSTEM_PROMPT,
       user: buildEnrichmentUserPrompt(fragmentsJson),
       image: { bytes: input.imageBytes, mimeType: input.mimeType },

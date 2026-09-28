@@ -27,6 +27,11 @@ const EnvSchema = z.object({
 
   // ---- OpenAI models / voices (config-driven, see technical spec) ----
   OPENAI_VISION_MODEL: z.string().min(1).default('gpt-4o'),
+  // Optional one-shot fallback for page enrichment only: if enrichment with
+  // OPENAI_VISION_MODEL fails with a provider error or an invalid AI
+  // response, it is retried once with this model. Google Vision OCR is
+  // never retried.
+  OPENAI_ENRICHMENT_FALLBACK: z.string().min(1).optional(),
   OPENAI_TTS_MODEL: z.string().min(1).default('gpt-4o-mini-tts'),
   DEFAULT_JA_VOICE: z.string().min(1).default('alloy'),
   DEFAULT_ZH_VOICE: z.string().min(1).default('echo'),

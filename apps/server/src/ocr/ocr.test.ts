@@ -399,3 +399,125 @@ describe('AiService.enrichPage', () => {
     );
   });
 });
+
+/* ------------------------------------------------------------------ */
+/* Enrichment fallback (OPENAI_ENRICHMENT_FALLBACK)                     */
+/* ------------------------------------------------------------------ */
+
+/** Fake OpenAI client dispatching per model; records call order. */
+function fakeAiClientByModel(handlers: Record<string, (call: { model: string }) => unknown>) {
+  const calls: string[] = [];
+  const client = {
+    chat: {
+      completions: {
+        create: async (args: { model: string }) => {
+          calls.push(args.model);
+          const h = handlers[args.model];
+          if (!h) throw new Error(`no handler for model ${args.model}`);
+          return h(args);
+        },
+      },
+    },
+  } as never;
+  return { client, calls };
+}
+
+function okEnrichmentResponse() {
+  return { choices: [{ message: { content: JSON.stringify(validEnrichment) } }] };
+}
+
+function badIdsEnrichmentResponse() {
+  const bad = structuredClone(validEnrichment);
+  bad.reading_blocks[0]!.ocr_ids = ['ocr_001', 'ocr_999'];
+  return { choices: [{ message: { content: JSON.stringify(bad) } }] };
+}
+
+function fallbackService(
+  primary: string,
+  fallback: string | undefined,
+  handlers: Record<string, (call: { model: string }) => unknown>,
+) {
+  const { client, calls } = fakeAiClientByModel(handlers);
+  const svc = new AiService(
+    { OPENAI_API_KEY: 'k', OPENAI_VISION_MODEL: primary, OPENAI_ENRICHMENT_FALLBACK: fallback } as never,
+    { client },
+  );
+  return { svc, calls };
+}
+
+const enrichInput = { imageBytes: Buffer.from('img'), mimeType: 'image/png', fragments: fragList };
+
+describe('AiService.enrichPage fallback', () => {
+  it('retries once with the fallback model after a provider error', async () => {
+    const { svc, calls } = fallbackService('gpt-5.6-luna', 'gpt-5.6-sol', {
+      'gpt-5.6-luna': () => {
+        throw new Error('provider 400');
+      },
+      'gpt-5.6-sol': () => okEnrichmentResponse(),
+    });
+    const out = await svc.enrichPage(enrichInput);
+    assert.equal(out.blocks.length, 1);
+    assert.deepEqual(calls, ['gpt-5.6-luna', 'gpt-5.6-sol']);
+  });
+
+  it('retries once after an invalid AI response (non-JSON)', async () => {
+    const { svc, calls } = fallbackService('gpt-5.6-luna', 'gpt-5.6-sol', {
+      'gpt-5.6-luna': () => ({ choices: [{ message: { content: 'not json' } }] }),
+      'gpt-5.6-sol': () => okEnrichmentResponse(),
+    });
+    const out = await svc.enrichPage(enrichInput);
+    assert.equal(out.blocks.length, 1);
+    assert.deepEqual(calls, ['gpt-5.6-luna', 'gpt-5.6-sol']);
+  });
+
+  it('does not retry when no fallback is configured', async () => {
+    const { svc, calls } = fallbackService('gpt-5.6-luna', undefined, {
+      'gpt-5.6-luna': () => {
+        throw new Error('provider 400');
+      },
+    });
+    await assert.rejects(
+      () => svc.enrichPage(enrichInput),
+      (err: unknown) => err instanceof AiError && err.code === ErrorCodes.PAGE_ANALYSIS_FAILED,
+    );
+    assert.deepEqual(calls, ['gpt-5.6-luna']);
+  });
+
+  it('does not retry local validation errors (unknown ocr ids)', async () => {
+    const { svc, calls } = fallbackService('gpt-5.6-luna', 'gpt-5.6-sol', {
+      'gpt-5.6-luna': () => badIdsEnrichmentResponse(),
+      'gpt-5.6-sol': () => okEnrichmentResponse(),
+    });
+    await assert.rejects(
+      () => svc.enrichPage(enrichInput),
+      (err: unknown) => err instanceof AiError && err.code === ErrorCodes.INVALID_OCR_REFERENCE,
+    );
+    assert.deepEqual(calls, ['gpt-5.6-luna']);
+  });
+
+  it('propagates the fallback error when it also fails (no infinite loop)', async () => {
+    const { svc, calls } = fallbackService('gpt-5.6-luna', 'gpt-5.6-sol', {
+      'gpt-5.6-luna': () => {
+        throw new Error('primary down');
+      },
+      'gpt-5.6-sol': () => {
+        throw new Error('fallback down');
+      },
+    });
+    await assert.rejects(
+      () => svc.enrichPage(enrichInput),
+      (err: unknown) => err instanceof AiError && err.code === ErrorCodes.PAGE_ANALYSIS_FAILED,
+    );
+    assert.deepEqual(calls, ['gpt-5.6-luna', 'gpt-5.6-sol']);
+  });
+
+  it('does not retry when fallback equals the primary model', async () => {
+    const { svc, calls } = fallbackService('gpt-5.6-luna', 'gpt-5.6-luna', {
+      'gpt-5.6-luna': () => {
+        throw new Error('provider 400');
+      },
+    });
+    await assert.rejects(() => svc.enrichPage(enrichInput), AiError);
+    assert.deepEqual(calls, ['gpt-5.6-luna']);
+  });
+});

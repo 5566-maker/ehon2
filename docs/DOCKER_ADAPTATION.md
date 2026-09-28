@@ -51,7 +51,10 @@ docker compose up -d --build
 3. 在 Variables 中填入 `.env.example` 里的必填项（`OPENAI_API_KEY`、`AUTH_USERNAME`、
    `AUTH_PASSWORD_HASH`、`SESSION_SECRET`），`DATA_DIR=/data`。内页识别另需
    `GOOGLE_VISION_API_KEY`（不设则服务照常启动，但内页识别会明确报错），以及
-   `OPENAI_VISION_MODEL=gpt-4o`（enrichment 模型）。
+   `OPENAI_VISION_MODEL=gpt-5.6-luna`（enrichment 模型，推荐）、
+   `OPENAI_ENRICHMENT_FALLBACK=gpt-5.6-sol`（主模型失败时自动重试一次，可选）。
+   注：`gpt-5.6-luna`/`gpt-5.6-sol` 不接受显式 `temperature` 参数，服务端已自动省略，
+   此前因此报 400 的问题已修复。
 4. 添加 Volume，挂载路径 `/data`（持久化 SQLite + 媒体文件）。
 5. 端口使用 `PORT`（默认 3000），绑定域名，开启 HTTPS。
 
