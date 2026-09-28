@@ -5,6 +5,7 @@ import {
   KokoroTtsProvider,
   OpenAiTtsProvider,
   TtsError,
+  audioCacheIdentity,
   kokoroVoiceFor,
   resolveTtsSpeed,
   resolveTtsVoice,
@@ -273,7 +274,10 @@ describe('AiService.synthesizeSpeech fallback', () => {
   it('uses Kokoro when it succeeds (no OpenAI call)', async () => {
     const { svc, fetchCalls, openaiCalls } = service({ kokoroBehavior: 'ok', openaiBehavior: 'ok' });
     const out = await svc.synthesizeSpeech(input);
-    assert.deepEqual(out, MP3);
+    assert.deepEqual(out.audio, MP3);
+    assert.equal(out.provider, 'kokoro');
+    assert.equal(out.voice, 'jf_alpha');
+    assert.equal(out.model, 'kokoro');
     assert.equal(fetchCalls.length, 1);
     assert.equal(openaiCalls.length, 0);
   });
@@ -281,7 +285,10 @@ describe('AiService.synthesizeSpeech fallback', () => {
   it('falls back once to OpenAI when Kokoro fails', async () => {
     const { svc, fetchCalls, openaiCalls } = service({ kokoroBehavior: 'fail', openaiBehavior: 'ok' });
     const out = await svc.synthesizeSpeech(input);
-    assert.deepEqual(out, OPENAI_MP3);
+    assert.deepEqual(out.audio, OPENAI_MP3);
+    assert.equal(out.provider, 'openai');
+    assert.equal(out.voice, 'alloy');
+    assert.equal(out.model, 'gpt-4o-mini-tts');
     assert.equal(fetchCalls.length, 1);
     assert.equal(openaiCalls.length, 1);
     // The fallback must use an OpenAI voice, never the Kokoro voice id.
@@ -316,9 +323,28 @@ describe('AiService.synthesizeSpeech fallback', () => {
       openaiBehavior: 'ok',
     });
     const out = await svc.synthesizeSpeech({ ...input, voice: 'alloy' });
-    assert.deepEqual(out, OPENAI_MP3);
+    assert.deepEqual(out.audio, OPENAI_MP3);
+    assert.equal(out.provider, 'openai');
+    assert.equal(out.voice, 'alloy');
+    assert.equal(out.model, 'gpt-4o-mini-tts');
     assert.equal(fetchCalls.length, 0);
     assert.equal(openaiCalls.length, 1);
     assert.equal(openaiCalls[0]!['voice'], 'alloy');
+  });
+});
+
+describe('audioCacheIdentity', () => {
+  it('namespaces Kokoro audio under kokoro/<voice>', () => {
+    assert.deepEqual(audioCacheIdentity({ provider: 'kokoro', voice: 'jf_alpha' }), {
+      cacheVoice: 'kokoro/jf_alpha',
+      keyVariant: 'kokoro-jf-alpha',
+    });
+  });
+
+  it('keeps the legacy bare-voice identity for OpenAI audio', () => {
+    assert.deepEqual(audioCacheIdentity({ provider: 'openai', voice: 'alloy' }), {
+      cacheVoice: 'alloy',
+      keyVariant: undefined,
+    });
   });
 });

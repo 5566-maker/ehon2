@@ -12,7 +12,12 @@ import { deleteBlock, getBlock, getBlockBook, updateBlock } from '../db/blocks.j
 import { createAudio, findAudio } from '../db/audio.js';
 import { fail, ok, zodDetails } from '../utils/response.js';
 import { AiError, selectTtsText, textHash } from '../openai/service.js';
-import { resolveTtsSpeed, resolveTtsVoice, sanitizeVoiceForKey } from '../tts/providers.js';
+import {
+  audioCacheIdentity,
+  resolveTtsSpeed,
+  resolveTtsVoice,
+  type TtsSynthesisResult,
+} from '../tts/providers.js';
 
 export function blocksRoutes(deps: Deps): Hono {
   const { env, storage, ai } = deps;
@@ -93,37 +98,37 @@ export function blocksRoutes(deps: Deps): Hono {
       return ok(c, result);
     }
 
-    let mp3: Buffer;
+    let result: TtsSynthesisResult;
     try {
-      mp3 = await ai.synthesizeSpeech({ text, language, voice, speed });
+      result = await ai.synthesizeSpeech({ text, language, voice, speed });
     } catch (err) {
       const code = err instanceof AiError ? err.code : ErrorCodes.TTS_GENERATION_FAILED;
       console.error(`[tts] generation failed for block ${id}:`, err instanceof Error ? err.message : err);
       return fail(c, 502, code, 'Speech generation failed. Please try again.');
     }
 
-    // Kokoro generations get a provider/voice-suffixed storage key so they
-    // never reuse a cached OpenAI file; OpenAI keeps its legacy key format.
-    const keyVariant =
-      ttsVoice.provider === 'kokoro' ? `kokoro-${sanitizeVoiceForKey(voice)}` : undefined;
+    // Build the cache identity from the ACTUAL successful provider, not the
+    // requested one: when Kokoro fails, OpenAI generates the audio, and it
+    // must be cached under the OpenAI identity — never as kokoro/<voice>.
+    const { cacheVoice: actualCacheVoice, keyVariant } = audioCacheIdentity(result);
     const key = audioKey(ownership.bookId, id, language, hash, keyVariant);
     try {
-      storage.write(key, mp3);
+      storage.write(key, result.audio);
     } catch {
       return fail(c, 500, ErrorCodes.STORAGE_ERROR, 'Failed to store the generated audio.');
     }
     const asset = createAudio(
-      { blockId: id, language, voice: cacheVoice, speed, audioKey: key, textHash: hash },
+      { blockId: id, language, voice: actualCacheVoice, speed, audioKey: key, textHash: hash },
       db,
     );
-    const result: AudioRequestResult = {
+    const finalResult: AudioRequestResult = {
       audioUrl: `/api/audio/${asset.id}`,
       cached: false,
       language,
-      voice,
+      voice: result.voice,
       speed,
     };
-    return ok(c, result, 201);
+    return ok(c, finalResult, 201);
   });
 
   return app;

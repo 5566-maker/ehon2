@@ -27,6 +27,40 @@ export interface TtsProvider {
 }
 
 /**
+ * Result of a TTS synthesis: the audio plus which provider actually
+ * generated it. Callers must build cache identity / storage keys from
+ * THESE values, never from the requested provider — Kokoro may fail and
+ * OpenAI may generate the audio instead.
+ */
+export interface TtsSynthesisResult {
+  audio: Buffer;
+  provider: TtsProviderName;
+  /** Voice id actually sent to the successful provider. */
+  voice: string;
+  /** Model actually used (KOKORO_TTS_MODEL or OPENAI_TTS_MODEL). */
+  model: string;
+}
+
+/**
+ * Cache identity + storage key variant for a synthesis result.
+ * Kokoro audio is namespaced (`kokoro/<voice>`) so Kokoro and OpenAI
+ * generations never share a cache row; OpenAI keeps its legacy identity
+ * (bare voice id) so existing cache rows stay valid.
+ */
+export function audioCacheIdentity(result: Pick<TtsSynthesisResult, 'provider' | 'voice'>): {
+  cacheVoice: string;
+  keyVariant: string | undefined;
+} {
+  if (result.provider === 'kokoro') {
+    return {
+      cacheVoice: `kokoro/${result.voice}`,
+      keyVariant: `kokoro-${sanitizeVoiceForKey(result.voice)}`,
+    };
+  }
+  return { cacheVoice: result.voice, keyVariant: undefined };
+}
+
+/**
  * Error raised by a TTS provider.
  * `retryable` marks failures worth one attempt with the next provider in
  * the chain (connection/timeout/5xx/invalid audio). Local problems that a

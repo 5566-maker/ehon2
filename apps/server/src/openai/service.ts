@@ -23,6 +23,7 @@ import {
   TtsError,
   resolveVoice as resolveOpenAiVoice,
   type TtsProvider,
+  type TtsSynthesisResult,
 } from '../tts/providers.js';
 import type { OcrFragment } from '../ocr/types.js';
 import {
@@ -487,7 +488,11 @@ export class AiService {
   }
 
   /**
-   * Synthesize speech. Returns MP3 bytes.
+   * Synthesize speech. Returns the MP3 bytes plus which provider actually
+   * generated them (Kokoro primary, one OpenAI fallback on retryable
+   * failures). Callers must derive cache identity from the returned
+   * provider/voice, not from the requested ones.
+   *
    * For Japanese the caller passes selectTtsText() output, which prefers the
    * kana reading_text so kanji is never misread as Chinese.
    *
@@ -501,7 +506,7 @@ export class AiService {
     language: ReaderLanguage;
     voice: string;
     speed: number;
-  }): Promise<Buffer> {
+  }): Promise<TtsSynthesisResult> {
     const text = input.text?.trim();
     if (!text) {
       throw new AiError(ErrorCodes.TTS_TEXT_UNAVAILABLE, 'No text to synthesize.');
@@ -515,7 +520,13 @@ export class AiService {
         ? resolveOpenAiVoice(this.env, input.language, 'default')
         : input.voice;
       try {
-        return await provider.synthesize({ ...input, text, voice });
+        const audio = await provider.synthesize({ ...input, text, voice });
+        return {
+          audio,
+          provider: provider.name,
+          voice,
+          model: provider.name === 'kokoro' ? this.env.KOKORO_TTS_MODEL : this.env.OPENAI_TTS_MODEL,
+        };
       } catch (err) {
         const code = err instanceof AiError ? err.code : ErrorCodes.TTS_GENERATION_FAILED;
         const msg = err instanceof Error ? err.message : String(err);
