@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import { ErrorCodes, type ReaderLanguage } from '@ehon2/shared';
+import { ErrorCodes, KOKORO_DEFAULT_VOICES, type ReaderLanguage } from '@ehon2/shared';
 import type { AppEnv } from '../env.js';
 import { AiError } from '../openai/errors.js';
 
@@ -74,15 +74,19 @@ export class TtsError extends AiError {
   }
 }
 
-/** Built-in Kokoro voices, validated against the Kokoro voice list. */
-export const KOKORO_DEFAULT_VOICES = {
-  ja: 'jf_alpha',
-  zh: 'zf_xiaobei',
-  en: 'af_heart',
-} as const satisfies Record<ReaderLanguage, string>;
+/** Built-in Kokoro voices, validated against the Kokoro voice list. (shared) */
+export { KOKORO_DEFAULT_VOICES } from '@ehon2/shared';
 
-/** Resolve the Kokoro voice for a language (env override wins). */
-export function kokoroVoiceFor(env: AppEnv, language: ReaderLanguage): string {
+/**
+ * Resolve the Kokoro voice for a language.
+ * Priority: settings-page DB override > env override > built-in default.
+ */
+export function kokoroVoiceFor(
+  env: AppEnv,
+  language: ReaderLanguage,
+  dbVoice?: string | null,
+): string {
+  if (dbVoice) return dbVoice;
   switch (language) {
     case 'ja':
       return env.KOKORO_JA_VOICE ?? KOKORO_DEFAULT_VOICES.ja;
@@ -121,18 +125,20 @@ export interface ResolvedTtsVoice {
 
 /**
  * Resolve the requested voice for the configured TTS provider.
- * Explicit non-default voices are passed through to the active provider.
+ * An explicit non-default voice in the request wins; otherwise the
+ * settings-page DB override wins over the env override and the default.
  */
 export function resolveTtsVoice(
   env: AppEnv,
   language: ReaderLanguage,
   requested: string,
+  dbVoice?: string | null,
 ): ResolvedTtsVoice {
   if (env.TTS_PROVIDER === 'openai') {
     const voice = resolveVoice(env, language, requested);
     return { provider: 'openai', voice, cacheVoice: voice };
   }
-  const voice = requested !== 'default' ? requested : kokoroVoiceFor(env, language);
+  const voice = requested !== 'default' ? requested : kokoroVoiceFor(env, language, dbVoice);
   return { provider: 'kokoro', voice, cacheVoice: `kokoro/${voice}` };
 }
 
