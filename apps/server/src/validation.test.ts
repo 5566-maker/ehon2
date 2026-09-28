@@ -63,12 +63,14 @@ describe('API request schemas', () => {
     );
   });
 
-  it('AudioRequestSchema defaults voice/speed and clamps speed range', () => {
+  it('AudioRequestSchema defaults voice and clamps speed range', () => {
     const r = AudioRequestSchema.safeParse({ language: 'ja' });
     assert.equal(r.success, true);
     if (r.success) {
       assert.equal(r.data.voice, 'default');
-      assert.equal(r.data.speed, 1);
+      // No schema-level speed default: the server applies TTS_SPEED /
+      // per-language env defaults so env changes take effect.
+      assert.equal(r.data.speed, undefined);
     }
     assert.equal(AudioRequestSchema.safeParse({ language: 'ja', speed: 3 }).success, false);
     assert.equal(AudioRequestSchema.safeParse({ language: 'fr' }).success, false);
