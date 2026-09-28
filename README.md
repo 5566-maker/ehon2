@@ -86,6 +86,7 @@ docker compose logs -f app
    `OPENAI_TTS_MODEL`（默认 `gpt-4o-mini-tts`）重试一次；空文本、超长文本等本地校验错误不重试。
 3. 缓存：沿用现有音频缓存，Kokoro 的缓存 voice 会记为 `kokoro/<voice>`，与 OpenAI 缓存互不干扰，
    旧的 OpenAI 缓存继续有效。
+4. 日语朗读输入优先用文本块的假名注音（`reading_text`），避免汉字被 TTS 引擎误判成中文发音。
 
 Zeabur 环境变量（追加）：
 
@@ -97,7 +98,15 @@ KOKORO_TTS_MODEL=kokoro
 # KOKORO_ZH_VOICE=zf_xiaobei
 # KOKORO_EN_VOICE=af_heart
 OPENAI_TTS_MODEL=gpt-4o-mini-tts   # 仅作 fallback，保留
+# 语速（0.5–2，默认 1）：分语言覆盖优先于全局
+TTS_SPEED_JA=1.2
+TTS_SPEED_ZH=1.2
+# TTS_SPEED=1.15
+# TTS_SPEED_EN=1
 ```
+
+语速优先级：朗读请求里显式传的 `speed` ＞ `TTS_SPEED_JA/ZH/EN` ＞ `TTS_SPEED`（默认 1）。
+改语速后旧缓存按原语速保留，新语速会重新生成。
 
 ## 使用流程
 

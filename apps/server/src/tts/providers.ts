@@ -102,6 +102,18 @@ export function resolveTtsVoice(
   return { provider: 'kokoro', voice, cacheVoice: `kokoro/${voice}` };
 }
 
+/**
+ * Resolve the default TTS speed for a language.
+ * Per-language env overrides (TTS_SPEED_JA/ZH/EN) win; otherwise TTS_SPEED.
+ * A client-supplied request speed still wins over both (see blocks route).
+ */
+export function resolveTtsSpeed(env: AppEnv, language: ReaderLanguage): number {
+  const perLanguage = { ja: env.TTS_SPEED_JA, zh: env.TTS_SPEED_ZH, en: env.TTS_SPEED_EN }[
+    language
+  ];
+  return perLanguage ?? env.TTS_SPEED;
+}
+
 /** Make a voice id safe for embedding in a storage key segment. */
 export function sanitizeVoiceForKey(voice: string): string {
   return voice

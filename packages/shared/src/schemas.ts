@@ -113,7 +113,7 @@ export const UpdateBlockSchema = z.object({
 export const AudioRequestSchema = z.object({
   language: ReaderLanguageSchema,
   voice: z.string().min(1).max(100).optional().default('default'),
-  speed: z.number().min(0.5).max(2).optional().default(1),
+  speed: z.number().min(0.5).max(2).optional(),
 });
 
 /* ---------------- AI structured-output schemas ---------------- */

@@ -6,6 +6,7 @@ import {
   OpenAiTtsProvider,
   TtsError,
   kokoroVoiceFor,
+  resolveTtsSpeed,
   resolveTtsVoice,
   sanitizeVoiceForKey,
 } from './providers.js';
@@ -195,6 +196,20 @@ describe('voice resolution', () => {
     const r = resolveTtsVoice(kokoroEnv, 'ja', 'jf_nezumi');
     assert.equal(r.voice, 'jf_nezumi');
     assert.equal(r.cacheVoice, 'kokoro/jf_nezumi');
+  });
+
+  it('resolveTtsSpeed uses the global TTS_SPEED by default', () => {
+    const env = { TTS_SPEED: 1 } as AppEnv;
+    assert.equal(resolveTtsSpeed(env, 'ja'), 1);
+    assert.equal(resolveTtsSpeed(env, 'zh'), 1);
+    assert.equal(resolveTtsSpeed(env, 'en'), 1);
+  });
+
+  it('resolveTtsSpeed prefers per-language overrides', () => {
+    const env = { TTS_SPEED: 1, TTS_SPEED_JA: 1.2, TTS_SPEED_ZH: 1.25 } as AppEnv;
+    assert.equal(resolveTtsSpeed(env, 'ja'), 1.2);
+    assert.equal(resolveTtsSpeed(env, 'zh'), 1.25);
+    assert.equal(resolveTtsSpeed(env, 'en'), 1);
   });
 
   it('keeps legacy cache identity for the OpenAI provider', () => {

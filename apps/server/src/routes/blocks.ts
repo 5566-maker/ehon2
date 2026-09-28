@@ -12,7 +12,7 @@ import { deleteBlock, getBlock, getBlockBook, updateBlock } from '../db/blocks.j
 import { createAudio, findAudio } from '../db/audio.js';
 import { fail, ok, zodDetails } from '../utils/response.js';
 import { AiError, selectTtsText, textHash } from '../openai/service.js';
-import { resolveTtsVoice, sanitizeVoiceForKey } from '../tts/providers.js';
+import { resolveTtsSpeed, resolveTtsVoice, sanitizeVoiceForKey } from '../tts/providers.js';
 
 export function blocksRoutes(deps: Deps): Hono {
   const { env, storage, ai } = deps;
@@ -64,7 +64,8 @@ export function blocksRoutes(deps: Deps): Hono {
     const ttsVoice = resolveTtsVoice(env, language, parsed.data.voice);
     const voice = ttsVoice.voice; // provider voice sent to the TTS request
     const cacheVoice = ttsVoice.cacheVoice; // namespaced cache identity (kokoro/* vs OpenAI)
-    const speed = Math.round(parsed.data.speed * 100) / 100;
+    // Client-supplied speed wins; otherwise the per-language / global TTS_SPEED env default.
+    const speed = Math.round((parsed.data.speed ?? resolveTtsSpeed(env, language)) * 100) / 100;
 
     const text = selectTtsText(block, language);
     if (!text || text.trim().length === 0) {

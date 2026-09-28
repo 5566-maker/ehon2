@@ -68,6 +68,11 @@ const EnvSchema = z.object({
   KOKORO_JA_VOICE: z.string().min(1).optional(),
   KOKORO_ZH_VOICE: z.string().min(1).optional(),
   KOKORO_EN_VOICE: z.string().min(1).optional(),
+  // Default TTS speed (0.5-2x); per-language overrides win over the global.
+  TTS_SPEED: z.coerce.number().min(0.5).max(2).default(1),
+  TTS_SPEED_JA: z.coerce.number().min(0.5).max(2).optional(),
+  TTS_SPEED_ZH: z.coerce.number().min(0.5).max(2).optional(),
+  TTS_SPEED_EN: z.coerce.number().min(0.5).max(2).optional(),
 
   // ---- optional overrides ----
   PUBLIC_DIR: z.string().min(1).optional(),
