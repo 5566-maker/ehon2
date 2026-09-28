@@ -70,8 +70,13 @@ export class AiService {
 
   private describeError(err: unknown): string {
     if (err instanceof OpenAI.APIError) {
-      // Never leak raw auth details; keep a short server-side summary.
-      return `OpenAI API error (status ${err.status ?? 'unknown'}, type ${err.type ?? 'unknown'})`;
+      // The SDK message names the concrete problem (bad model, bad schema,
+      // bad image, …) and carries no secrets — include it for diagnosis.
+      const code = (err as { code?: unknown }).code;
+      return (
+        `OpenAI API error (status ${err.status ?? 'unknown'}, ` +
+        `type ${err.type ?? 'unknown'}, code ${code ?? 'unknown'}): ${err.message}`
+      );
     }
     if (err instanceof Error) return err.message;
     return String(err);
