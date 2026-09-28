@@ -47,6 +47,20 @@ function toDataUrl(bytes: Buffer, mimeType: string): string {
   return `data:${mimeType};base64,${bytes.toString('base64')}`;
 }
 
+/**
+ * Models that reject a custom `temperature` (only the default is accepted).
+ * gpt-5.6-luna / gpt-5.6-sol answer HTTP 400
+ * "Unsupported value: 'temperature' does not support 0 with this model"
+ * when the field is present, so it must be omitted entirely rather than
+ * forced to 1. The gpt-5 family and the o-series reasoning models share
+ * this constraint; everything else keeps temperature 0 for determinism.
+ */
+const FIXED_TEMPERATURE_MODEL_PATTERNS = [/^gpt-5([.-]|$)/i, /^o[134]/i];
+
+export function supportsCustomTemperature(model: string): boolean {
+  return !FIXED_TEMPERATURE_MODEL_PATTERNS.some((re) => re.test(model.trim()));
+}
+
 /** Clamp a raw AI bbox into valid 0..1 bounds; returns null if unusable. */
 export function sanitizeBbox(raw: { x: number; y: number; width: number; height: number }): BBox | null {
   const clamp = (v: number) => (Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : NaN);
@@ -101,7 +115,8 @@ export class AiService {
     try {
       completion = await this.client.chat.completions.create({
         model: args.model,
-        temperature: 0,
+        // gpt-5.6-luna / gpt-5.6-sol 400 on any explicit temperature — omit it.
+        ...(supportsCustomTemperature(args.model) ? { temperature: 0 } : {}),
         messages: [
           { role: 'system', content: args.system },
           {

@@ -5,9 +5,11 @@ import {
   PageAnalysisResultSchema,
 } from '@ehon2/shared';
 import {
+  AiService,
   resolveVoice,
   sanitizeBbox,
   selectTtsText,
+  supportsCustomTemperature,
   textHash,
 } from '../openai/service.js';
 
@@ -130,5 +132,80 @@ describe('TTS helpers', () => {
     assert.equal(resolveVoice(env, 'ja', 'default'), 'alloy');
     assert.equal(resolveVoice(env, 'zh', 'default'), 'echo');
     assert.equal(resolveVoice(env, 'en', 'nova'), 'nova');
+  });
+});
+
+/* ------------------------------------------------------------------ */
+/* temperature handling per model (fake OpenAI client — no network)     */
+/* ------------------------------------------------------------------ */
+
+function captureClient(content: unknown) {
+  const captured: { args?: Record<string, unknown> } = {};
+  const client = {
+    chat: {
+      completions: {
+        create: async (args: Record<string, unknown>) => {
+          captured.args = args;
+          return { choices: [{ message: { content: JSON.stringify(content) } }] };
+        },
+      },
+    },
+  } as never;
+  return { client, captured };
+}
+
+const validCoverPayload = {
+  title: 'ぐりとぐら',
+  subtitle: null,
+  title_reading: null,
+  author: '中川李枝子',
+  illustrator: null,
+  publisher: null,
+  isbn: null,
+  language: 'ja',
+  confidence: 0.9,
+};
+
+async function coverRequestModel(model: string): Promise<Record<string, unknown>> {
+  const { client, captured } = captureClient(validCoverPayload);
+  const svc = new AiService(
+    { OPENAI_API_KEY: 'k', OPENAI_VISION_MODEL: model } as never,
+    { client },
+  );
+  await svc.analyzeCover({ imageBytes: Buffer.from([1, 2, 3]), mimeType: 'image/jpeg' });
+  assert.ok(captured.args, 'expected the request args to be captured');
+  return captured.args;
+}
+
+describe('supportsCustomTemperature', () => {
+  it('rejects the gpt-5.6 family (luna/sol 400 on explicit temperature)', () => {
+    assert.equal(supportsCustomTemperature('gpt-5.6-luna'), false);
+    assert.equal(supportsCustomTemperature('gpt-5.6-sol'), false);
+    assert.equal(supportsCustomTemperature('gpt-5'), false);
+    assert.equal(supportsCustomTemperature('gpt-5-mini'), false);
+  });
+
+  it('keeps temperature for gpt-4o and other classic models', () => {
+    assert.equal(supportsCustomTemperature('gpt-4o'), true);
+    assert.equal(supportsCustomTemperature('gpt-4o-mini'), true);
+    assert.equal(supportsCustomTemperature('gpt-4.1'), true);
+  });
+});
+
+describe('chatJson temperature payload', () => {
+  it('omits temperature for gpt-5.6-luna', async () => {
+    const args = await coverRequestModel('gpt-5.6-luna');
+    assert.equal(args.model, 'gpt-5.6-luna');
+    assert.equal('temperature' in args, false);
+  });
+
+  it('omits temperature for gpt-5.6-sol', async () => {
+    const args = await coverRequestModel('gpt-5.6-sol');
+    assert.equal('temperature' in args, false);
+  });
+
+  it('sends temperature 0 for gpt-4o', async () => {
+    const args = await coverRequestModel('gpt-4o');
+    assert.equal(args.temperature, 0);
   });
 });
