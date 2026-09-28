@@ -96,6 +96,25 @@ export function ReaderPage() {
     return () => window.removeEventListener('keydown', onKey);
   }, [goPage]);
 
+  // Wait until the clip is buffered enough to start cleanly. Playing a
+  // fresh Audio element too early clips the first syllable on first play
+  // (cold media pipeline); the second play sounds fine because the file is
+  // already cached. Never rejects: falls back to playing anyway on timeout.
+  const waitForCanPlay = (audio: HTMLAudioElement, timeoutMs = 10000): Promise<void> =>
+    new Promise((resolve) => {
+      if (audio.readyState >= 3) return resolve(); // HAVE_FUTURE_DATA
+      const done = () => {
+        window.clearTimeout(timer);
+        audio.removeEventListener('canplay', done);
+        audio.removeEventListener('error', done);
+        resolve();
+      };
+      const timer = window.setTimeout(done, timeoutMs);
+      audio.addEventListener('canplay', done);
+      audio.addEventListener('error', done);
+      audio.load();
+    });
+
   const playTts = async (block: ReaderBlock, language: ReaderLanguage) => {
     if (playing && playing.blockId === block.id && playing.lang === language && audioRef.current) {
       // Toggle pause for the currently playing block+language.
@@ -115,12 +134,15 @@ export function ReaderPage() {
         language,
       });
       const audio = new Audio(res.audioUrl);
+      audio.preload = 'auto';
       audioRef.current = audio;
       audio.onended = () => setPlaying(null);
       audio.onerror = () => {
         setTtsError('音频播放失败，请重试。');
         setPlaying(null);
       };
+      await waitForCanPlay(audio);
+      if (audioRef.current !== audio) return; // superseded by a newer request
       await audio.play();
       setPlaying({ blockId: block.id, lang: language });
     } catch (err) {
