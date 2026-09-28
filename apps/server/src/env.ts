@@ -32,6 +32,16 @@ const EnvSchema = z.object({
   DEFAULT_ZH_VOICE: z.string().min(1).default('echo'),
   DEFAULT_EN_VOICE: z.string().min(1).default('verse'),
 
+  // ---- OCR provider (Google Vision owns geometry, OpenAI owns language) ----
+  // Kept optional so existing deployments keep starting without a Google key;
+  // page processing fails with a clear message until the key is set.
+  GOOGLE_VISION_API_KEY: z.string().min(1).optional(),
+  GOOGLE_VISION_ENABLED: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((v) => (v === undefined ? undefined : v === 'true')),
+  OCR_PROVIDER: z.enum(['google', 'openai-legacy']).default('google'),
+
   // ---- uploads / images ----
   IMAGE_MAX_DIM: z.coerce.number().int().min(256).max(4096).default(1600),
   IMAGE_QUALITY: z.coerce.number().int().min(1).max(100).default(80),

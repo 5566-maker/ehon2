@@ -24,6 +24,29 @@ export interface BBox {
   height: number;
 }
 
+/**
+ * One clickable region of a text block.
+ * Coordinates are normalized 0..1 (origin top-left), owned by the OCR
+ * provider — OpenAI never invents or modifies these.
+ */
+export interface TextRegion {
+  ocrId?: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+/** Normalized, provider-neutral OCR cache stored on pages.ocr_json. */
+export interface PageOcrCache {
+  provider: string;
+  fragments: {
+    id: string;
+    text: string;
+    bbox: BBox;
+  }[];
+}
+
 export interface VocabularyItem {
   word: string;
   reading?: string | null;
@@ -58,6 +81,8 @@ export interface BookPage {
   mimeType: string | null;
   ocrStatus: PageProcessingStatus;
   processingError: string | null;
+  /** Which OCR provider produced the cached ocr_json ('google-vision' | null). */
+  ocrProvider: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -75,6 +100,8 @@ export interface TextBlock {
   vocabulary: VocabularyItem[];
   orientation: TextOrientation;
   bbox: BBox;
+  /** Precise click regions (from OCR). Empty for legacy bbox-only blocks. */
+  regions: TextRegion[];
   confidence: number | null;
   createdAt: string;
   updatedAt: string;
@@ -180,6 +207,8 @@ export interface ReaderBlock {
   vocabulary: VocabularyItem[];
   orientation: TextOrientation;
   bbox: BBox;
+  /** Precise click regions; readers fall back to bbox when empty. */
+  regions: TextRegion[];
 }
 
 export interface ReaderPage {

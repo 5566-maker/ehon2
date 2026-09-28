@@ -179,6 +179,7 @@ export function pagesRoutes(deps: Deps): Hono {
           vocabulary: b.vocabulary,
           orientation: b.orientation,
           bbox: b.bbox,
+          regions: [],
           confidence: b.confidence,
         })),
         db,
@@ -204,6 +205,7 @@ export function pagesRoutes(deps: Deps): Hono {
             vocabulary: b.vocabulary,
             orientation: b.orientation,
             bbox: b.bbox,
+            regions: b.regions,
           }),
         ),
       };

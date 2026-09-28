@@ -416,6 +416,7 @@ export function booksRoutes(deps: Deps): Hono {
           vocabulary: b.vocabulary,
           orientation: b.orientation,
           bbox: b.bbox,
+          regions: b.regions,
         })),
       })),
     };

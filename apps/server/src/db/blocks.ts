@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { BBox, TextBlock, TextOrientation, VocabularyItem } from '@ehon2/shared';
+import type { BBox, TextBlock, TextOrientation, TextRegion, VocabularyItem } from '@ehon2/shared';
 import { getDatabase, transaction } from './connection.js';
 import { mapBlock, type Row } from './rows.js';
 import { newId } from '../utils/ids.js';
@@ -17,6 +17,8 @@ export interface CreateBlockInput {
   vocabulary?: VocabularyItem[];
   orientation?: TextOrientation;
   bbox: BBox;
+  /** Precise OCR regions; bbox stays as the legacy/union fallback. */
+  regions?: TextRegion[];
   confidence?: number | null;
 }
 
@@ -31,13 +33,14 @@ export interface UpdateBlockInput {
   vocabulary?: VocabularyItem[];
   orientation?: TextOrientation;
   bbox?: BBox;
+  regions?: TextRegion[] | null;
   confidence?: number | null;
 }
 
 const COLUMNS =
   'id, page_id, block_order, original_text, normalized_text, reading_text, chinese_text, ' +
   'english_text, explanation_zh, vocabulary_json, orientation, bbox_x, bbox_y, bbox_width, ' +
-  'bbox_height, confidence, created_at, updated_at';
+  'bbox_height, regions_json, confidence, created_at, updated_at';
 
 function insertBlockRow(input: CreateBlockInput, db: DatabaseSync, id: string = newId()): TextBlock {
   const now = nowIso();
@@ -45,8 +48,8 @@ function insertBlockRow(input: CreateBlockInput, db: DatabaseSync, id: string = 
     `INSERT INTO text_blocks
        (id, page_id, block_order, original_text, normalized_text, reading_text,
         chinese_text, english_text, explanation_zh, vocabulary_json, orientation,
-        bbox_x, bbox_y, bbox_width, bbox_height, confidence, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        bbox_x, bbox_y, bbox_width, bbox_height, regions_json, confidence, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     id,
     input.pageId,
@@ -63,6 +66,7 @@ function insertBlockRow(input: CreateBlockInput, db: DatabaseSync, id: string = 
     input.bbox.y,
     input.bbox.width,
     input.bbox.height,
+    input.regions && input.regions.length > 0 ? JSON.stringify(input.regions) : null,
     input.confidence ?? null,
     now,
     now,
@@ -183,6 +187,10 @@ export function updateBlock(
     if (input.bbox !== undefined) {
       sets.push('bbox_x = ?', 'bbox_y = ?', 'bbox_width = ?', 'bbox_height = ?');
       values.push(input.bbox.x, input.bbox.y, input.bbox.width, input.bbox.height);
+    }
+    if (input.regions !== undefined) {
+      sets.push('regions_json = ?');
+      values.push(input.regions && input.regions.length > 0 ? JSON.stringify(input.regions) : null);
     }
     if (input.blockOrder !== undefined && input.blockOrder !== existing.blockOrder) {
       sets.push('block_order = ?');

@@ -9,6 +9,7 @@ import type {
   ReaderLanguage,
   TextBlock,
   TextOrientation,
+  TextRegion,
   VocabularyItem,
 } from '@ehon2/shared';
 
@@ -36,6 +37,25 @@ function parseVocabulary(json: unknown): VocabularyItem[] {
   try {
     const parsed: unknown = JSON.parse(str(json));
     return Array.isArray(parsed) ? (parsed as VocabularyItem[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function parseRegions(json: unknown): TextRegion[] {
+  if (json === null || json === undefined) return [];
+  try {
+    const parsed: unknown = JSON.parse(str(json));
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (r): r is TextRegion =>
+        typeof r === 'object' &&
+        r !== null &&
+        typeof (r as TextRegion).x === 'number' &&
+        typeof (r as TextRegion).y === 'number' &&
+        typeof (r as TextRegion).width === 'number' &&
+        typeof (r as TextRegion).height === 'number',
+    );
   } catch {
     return [];
   }
@@ -72,6 +92,7 @@ export function mapPage(row: Row): BookPage {
     mimeType: strOrNull(row.mime_type),
     ocrStatus: str(row.ocr_status) as PageProcessingStatus,
     processingError: strOrNull(row.processing_error),
+    ocrProvider: strOrNull(row.ocr_provider),
     createdAt: str(row.created_at),
     updatedAt: str(row.updated_at),
   };
@@ -96,6 +117,7 @@ export function mapBlock(row: Row): TextBlock {
       width: numOrNull(row.bbox_width) ?? 0,
       height: numOrNull(row.bbox_height) ?? 0,
     },
+    regions: parseRegions(row.regions_json),
     confidence: numOrNull(row.confidence),
     createdAt: str(row.created_at),
     updatedAt: str(row.updated_at),

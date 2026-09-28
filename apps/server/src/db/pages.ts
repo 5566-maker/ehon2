@@ -1,5 +1,5 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { BookPage, PageProcessingStatus } from '@ehon2/shared';
+import type { BookPage, PageOcrCache, PageProcessingStatus } from '@ehon2/shared';
 import { getDatabase, transaction } from './connection.js';
 import { mapPage, type Row } from './rows.js';
 import { newId } from '../utils/ids.js';
@@ -17,7 +17,7 @@ export interface CreatePageInput {
 
 const COLUMNS =
   'id, book_id, page_number, original_image_key, processed_image_key, width, height, ' +
-  'mime_type, ocr_status, processing_error, created_at, updated_at';
+  'mime_type, ocr_status, processing_error, ocr_provider, created_at, updated_at';
 
 export function createPage(input: CreatePageInput, db: DatabaseSync = getDatabase()): BookPage {
   const now = nowIso();
@@ -81,6 +81,41 @@ export function setPageStatus(
     nowIso(),
     id,
   );
+}
+
+/**
+ * Persist the normalized OCR result for a page (provider-neutral cache).
+ * Re-running enrichment later reuses this instead of calling Vision again.
+ */
+export function setPageOcr(
+  id: string,
+  provider: string,
+  cache: PageOcrCache,
+  db: DatabaseSync = getDatabase(),
+): void {
+  db.prepare('UPDATE pages SET ocr_json = ?, ocr_provider = ?, updated_at = ? WHERE id = ?').run(
+    JSON.stringify(cache),
+    provider,
+    nowIso(),
+    id,
+  );
+}
+
+/** Load the cached OCR result for a page, or null when absent/invalid. */
+export function getPageOcr(id: string, db: DatabaseSync = getDatabase()): PageOcrCache | null {
+  const row = db.prepare('SELECT ocr_json AS ocr_json FROM pages WHERE id = ?').get(id) as
+    | { ocr_json: string | null }
+    | undefined;
+  if (!row?.ocr_json) return null;
+  try {
+    const parsed: unknown = JSON.parse(row.ocr_json);
+    if (typeof parsed !== 'object' || parsed === null) return null;
+    const cache = parsed as PageOcrCache;
+    if (typeof cache.provider !== 'string' || !Array.isArray(cache.fragments)) return null;
+    return cache;
+  } catch {
+    return null;
+  }
 }
 
 export function deletePage(id: string, db: DatabaseSync = getDatabase()): boolean {
