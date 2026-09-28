@@ -87,6 +87,10 @@ docker compose logs -f app
 3. 缓存：沿用现有音频缓存，Kokoro 的缓存 voice 会记为 `kokoro/<voice>`，与 OpenAI 缓存互不干扰，
    旧的 OpenAI 缓存继续有效。
 4. 日语朗读输入优先用文本块的假名注音（`reading_text`），避免汉字被 TTS 引擎误判成中文发音。
+5. **设置页**：登录后点右上角 ⚙️ 可进 `/settings`，用下拉菜单自由选择每种语言的 Kokoro
+   声音（日/中/英各 5/8/19 个可选）和语速（0.5–2.0，0.1 步长）。页面设置存 SQLite
+   `settings` 表，优先级高于环境变量；换声音/语速不影响已缓存的旧音频（缓存 key
+   本来就含 voice 和 speed）。
 
 Zeabur 环境变量（追加）：
 
@@ -105,8 +109,9 @@ TTS_SPEED_ZH=1.2
 # TTS_SPEED_EN=1
 ```
 
-语速优先级：朗读请求里显式传的 `speed` ＞ `TTS_SPEED_JA/ZH/EN` ＞ `TTS_SPEED`（默认 1）。
+语速优先级：朗读请求里显式传的 `speed` ＞ 设置页面的语速 ＞ `TTS_SPEED_JA/ZH/EN` ＞ `TTS_SPEED`（默认 1）。
 改语速后旧缓存按原语速保留，新语速会重新生成。
+声音优先级：朗读请求里显式传的 `voice` ＞ 设置页面的声音 ＞ `KOKORO_JA_VOICE/ZH_VOICE/EN_VOICE` ＞ 内置默认。
 
 ## 可靠性说明
 
