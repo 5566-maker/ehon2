@@ -10,7 +10,7 @@ export function ok<T>(c: Context, data: T, status = 200) {
 /** Error envelope: { success: false, error: { code, message, details? } }. */
 export function fail(
   c: Context,
-  status: 400 | 401 | 403 | 404 | 409 | 413 | 415 | 422 | 500 | 502 | 503,
+  status: 400 | 401 | 403 | 404 | 409 | 413 | 415 | 422 | 429 | 500 | 502 | 503,
   code: string,
   message: string,
   details?: unknown,

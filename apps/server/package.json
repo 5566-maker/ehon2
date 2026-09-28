@@ -20,7 +20,7 @@
     "start": "node dist/index.js",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "pretypecheck": "pnpm --filter @ehon2/shared build",
-    "test": "tsx --test src/auth/password.test.ts src/validation.test.ts src/storage/keys.test.ts src/openai/ai.test.ts src/ocr/ocr.test.ts src/db/db.test.ts src/tts/providers.test.ts src/routes/pages.test.ts src/routes/books.test.ts"
+    "test": "tsx --test src/auth/password.test.ts src/validation.test.ts src/storage/keys.test.ts src/openai/ai.test.ts src/ocr/ocr.test.ts src/db/db.test.ts src/tts/providers.test.ts src/routes/pages.test.ts src/routes/books.test.ts src/auth/loginLimiter.test.ts"
   },
   "type": "module",
   "version": "0.1.0"
