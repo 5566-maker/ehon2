@@ -4,9 +4,14 @@
 #   /app/deploy/dist/...   server (compiled)
 #   /app/deploy/public/... frontend static files (served by the server)
 #   /data                  volume: ehon2.db (SQLite) + media/ (images, audio)
+#
+# Base is trixie (not bookworm): trixie ships libheif 1.23, which is
+# required to decode modern iPhone photos — 24MP captures are tiled
+# (tmap) HEIC, and bookworm's libheif 1.15 cannot decode them at all
+# (heic2any's 2023 WASM libheif fails the same way).
 
 # ---------- dependencies ----------
-FROM node:22-bookworm-slim AS deps
+FROM node:22-trixie-slim AS deps
 RUN corepack enable
 WORKDIR /app
 COPY pnpm-workspace.yaml package.json pnpm-lock.yaml ./
@@ -29,7 +34,7 @@ RUN pnpm --filter @ehon2/shared build \
  && pnpm --filter @ehon2/server --prod deploy --legacy /app/deploy
 
 # ---------- runtime ----------
-FROM node:22-bookworm-slim AS runner
+FROM node:22-trixie-slim AS runner
 ENV NODE_ENV=production
 WORKDIR /app
 # heif-convert (libheif + libde265) decodes HEIC/HEIF uploads server-side:
