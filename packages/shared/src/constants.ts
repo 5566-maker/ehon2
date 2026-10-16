@@ -5,16 +5,23 @@ export const PAGE_ANALYSIS_PROMPT_VERSION = 'page-analysis-v2';
 export const PAGE_ENRICHMENT_PROMPT_VERSION = 'page-enrichment-v2';
 export const COVER_ANALYSIS_PROMPT_VERSION = 'cover-analysis-v1';
 
-/** MIME types the server accepts for book images. */
-export const ACCEPTED_IMAGE_MIMES = ['image/jpeg', 'image/png', 'image/webp'] as const;
-
-/** MIME types that are explicitly rejected with a helpful message. */
-export const REJECTED_HEIC_MIMES = ['image/heic', 'image/heif'] as const;
+/** MIME types the server accepts for book images. HEIC/HEIF is accepted —
+ * the server converts it to JPEG with heif-convert before sharp processing
+ * (sharp's bundled libheif cannot decode HEVC pixels). */
+export const ACCEPTED_IMAGE_MIMES = [
+  'image/jpeg',
+  'image/png',
+  'image/webp',
+  'image/heic',
+  'image/heif',
+] as const;
 
 export const EXT_BY_MIME: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
+  'image/heic': 'heic',
+  'image/heif': 'heif',
 };
 
 /** settings 表中存储登录密码哈希的键。页面改密覆盖环境变量 AUTH_PASSWORD_HASH。 */

@@ -388,7 +388,7 @@ export function EditorPage() {
             {batching && <Spinner size={16} />}
             {batching ? '批量识别中…' : '✨ 识别全部待处理页'}
           </button>
-          <p className="text-xs text-cocoa-soft">可多选，HEIC 会在手机上自动转成 JPEG 再上传，按文件名顺序追加到末尾。</p>
+          <p className="text-xs text-cocoa-soft">可多选，HEIC 会尽量在手机上转成 JPEG，转不了就直接上传由服务端处理，按文件名顺序追加到末尾。</p>
         </div>
         {pages.length > 0 && (
           <ul className="mt-3 grid gap-2 sm:grid-cols-2">

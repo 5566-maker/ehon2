@@ -1,8 +1,11 @@
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, readdirSync, existsSync } from 'node:fs';
+import { execFile } from 'node:child_process';
+import { mkdtempSync, rmSync, readdirSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { promisify } from 'node:util';
 import sharp from 'sharp';
 import { ErrorCodes } from '@ehon2/shared';
 import { openDatabase, closeDatabase, getDatabase } from '../db/connection.js';
@@ -98,6 +101,47 @@ describe('POST /books/:id/pages two-phase upload', () => {
     // Phase 1 failed before anything persistent was touched.
     assert.deepEqual(listPagesByBook(book.id, db), []);
     assert.ok(!existsSync(join(storageDir, 'books', book.id, 'pages')), 'no page files written');
+  });
+
+  it('accepts an HEIC upload and converts it server-side', async (t) => {
+    // heif-convert is a runtime dependency (installed in the Docker image).
+    // Skip on machines without it instead of failing the suite.
+    try {
+      await promisify(execFile)('heif-convert', ['--version']);
+    } catch {
+      t.skip('heif-convert not installed');
+    }
+    const db = getDatabase();
+    const book = createBook({ title: 't', language: 'ja' }, db);
+    const storage = new FileStorage(storageDir);
+    const app = booksRoutes({ env: stubEnv(), storage, ai: {} as never });
+    const heic = readFileSync(
+      join(dirname(fileURLToPath(import.meta.url)), '__fixtures__', 'sample-hevc.heic'),
+    );
+
+    const res = await app.request(`/${book.id}/pages`, {
+      method: 'POST',
+      body: uploadForm([{ name: 'photo.heic', data: heic, type: 'image/heic' }]),
+    });
+    assert.equal(res.status, 201);
+    const body = (await res.json()) as {
+      success: boolean;
+      data: { pages: { id: string; pageNumber: number }[] };
+    };
+    assert.equal(body.success, true);
+    assert.equal(body.data.pages.length, 1);
+    const page = body.data.pages[0];
+    assert.ok(page);
+    assert.ok(storage.exists(`books/${book.id}/pages/${page.id}/processed.webp`), 'processed webp stored');
+    assert.ok(storage.exists(`books/${book.id}/pages/${page.id}/original.heic`), 'original HEIC stored');
+    // Fixture is 1440x960, stub IMAGE_MAX_DIM is 256 -> downscaled to 256x171
+    // (960 * 256 / 1440 = 170.67, rounded).
+    const rows = listPagesByBook(book.id, db);
+    assert.equal(rows.length, 1);
+    const row = rows[0];
+    assert.ok(row);
+    assert.equal(row.width, 256);
+    assert.equal(row.height, 171);
   });
 
   it('rolls back the whole batch when a storage write fails mid-batch', async () => {

@@ -1,6 +1,8 @@
 /**
- * HEIC/HEIF handling. The server rejects HEIC (sharp has no HEIC decoder by
- * default), so the client converts to JPEG before upload.
+ * HEIC/HEIF handling. The server converts HEIC with heif-convert, so the
+ * client tries a fast in-browser conversion first and falls back to
+ * uploading the original when the browser cannot decode it (e.g. Android
+ * Chrome + a codec variant the WASM decoder does not support).
  *
  * Two decode paths:
  * 1. Native (fast): iPhone Safari decodes HEIC in an <img>, so drawing it to
@@ -114,20 +116,17 @@ export async function convertHeicToJpeg(file: File, quality = 0.92): Promise<Fil
 }
 
 /**
- * Ensure an uploadable image: converts HEIC to JPEG when needed,
- * passes everything else through unchanged.
+ * Ensure an uploadable image: converts HEIC to JPEG when the browser can,
+ * otherwise passes the original through for server-side conversion.
  */
 export async function prepareUploadFile(file: File): Promise<File> {
   if (!isHeicFile(file)) return file;
   try {
     return await convertHeicToJpeg(file);
   } catch (err) {
-    const detail = describeError(err);
-    // Keep the technical reason visible so a failed conversion can be diagnosed
-    // from the message alone.
-    console.error('[heic] conversion failed:', detail);
-    throw new Error(
-      `无法读取这张 HEIC 照片${detail ? `（${detail}）` : ''}，请在相册中导出为 JPEG 后再上传。`,
-    );
+    // The browser couldn't decode this HEIC variant — upload the original
+    // and let the server convert it with heif-convert.
+    console.error('[heic] client conversion failed, uploading original:', describeError(err));
+    return file;
   }
 }

@@ -208,7 +208,7 @@ export function booksRoutes(deps: Deps): Hono {
     }
     let processed;
     try {
-      processed = await processImage(upload.bytes, env.IMAGE_MAX_DIM, env.IMAGE_QUALITY);
+      processed = await processImage(upload.bytes, env.IMAGE_MAX_DIM, env.IMAGE_QUALITY, upload.mimeType);
     } catch {
       return fail(c, 422, ErrorCodes.IMAGE_PROCESSING_FAILED, 'Unable to decode the uploaded image.');
     }
@@ -341,7 +341,7 @@ export function booksRoutes(deps: Deps): Hono {
       }
       let processed;
       try {
-        processed = await processImage(upload.bytes, env.IMAGE_MAX_DIM, env.IMAGE_QUALITY);
+        processed = await processImage(upload.bytes, env.IMAGE_MAX_DIM, env.IMAGE_QUALITY, upload.mimeType);
       } catch {
         return fail(c, 422, ErrorCodes.IMAGE_PROCESSING_FAILED, `Unable to decode ${file.name}.`);
       }

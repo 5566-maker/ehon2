@@ -32,6 +32,10 @@ RUN pnpm --filter @ehon2/shared build \
 FROM node:22-bookworm-slim AS runner
 ENV NODE_ENV=production
 WORKDIR /app
+# heif-convert (libheif + libde265) decodes HEIC/HEIF uploads server-side:
+# sharp's bundled libheif cannot decode HEVC pixels.
+RUN apt-get update && apt-get install -y --no-install-recommends libheif-examples \
+  && rm -rf /var/lib/apt/lists/*
 COPY --from=server-build /app/deploy ./deploy
 COPY --from=web-build /app/apps/web/dist ./deploy/public
 # SQL migrations run automatically at startup (see apps/server/src/db/migrate.ts)
