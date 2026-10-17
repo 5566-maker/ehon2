@@ -95,6 +95,10 @@ export function ReaderPage() {
   }, [goPage]);
 
   const playTts = async (block: ReaderBlock, language: ReaderLanguage) => {
+    // Unlock audio synchronously inside the click gesture, before any await.
+    // Mobile Safari refuses a resume that runs after the gesture ends (e.g.
+    // after an 11-15s Kokoro generation), which stalls playback forever.
+    player.unlock();
     const key = `${block.id}:${language}`;
     if (playing && playing.blockId === block.id && playing.lang === language && player.isActive()) {
       // Toggle pause for the currently playing block+language.

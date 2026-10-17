@@ -32,6 +32,11 @@ export interface TtsPlayer {
   toggle: () => Promise<boolean | null>;
   stop: () => void;
   isActive: () => boolean;
+  /** Unlock audio output synchronously inside a user gesture. Call this from
+   * the click handler before any await: mobile Safari refuses a resume that
+   * runs after the gesture ends (e.g. after an 11-15s Kokoro generation),
+   * which stalls playback forever. Safe to call repeatedly. */
+  unlock: () => void;
 }
 
 /**
@@ -60,6 +65,32 @@ export function useTtsPlayer(callbacks: TtsPlayerCallbacks): TtsPlayer {
     }
     return ctx;
   }, []);
+
+  /**
+   * Unlock audio output synchronously inside a user gesture.
+   *
+   * Mobile Safari refuses AudioContext.resume() once the gesture has ended,
+   * so a resume that runs after an async generation (Kokoro takes 11-15s on
+   * a slow CPU) never completes and playback stalls forever. Call this
+   * synchronously from the click handler, before any await, so the context
+   * is already running by the time the generated clip arrives.
+   */
+  const unlock = useCallback(() => {
+    const ctx = getCtx();
+    if (ctx.state === 'suspended') {
+      void ctx.resume().catch(() => {});
+    }
+    // Wake the output pipeline with a 1-sample silent buffer. On some mobile
+    // browsers a resumed-but-idle context still drops the first output.
+    const source = ctx.createBufferSource();
+    source.buffer = ctx.createBuffer(1, 1, ctx.sampleRate);
+    source.connect(ctx.destination);
+    try {
+      source.start();
+    } catch {
+      /* already started */
+    }
+  }, [getCtx]);
 
   const loadBuffer = useCallback(
     async (url: string): Promise<AudioBuffer> => {
@@ -214,7 +245,7 @@ export function useTtsPlayer(callbacks: TtsPlayerCallbacks): TtsPlayer {
   );
 
   return useMemo(
-    () => ({ play, toggle, stop, isActive }),
-    [play, toggle, stop, isActive],
+    () => ({ play, toggle, stop, isActive, unlock }),
+    [play, toggle, stop, isActive, unlock],
   );
 }
