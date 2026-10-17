@@ -316,6 +316,36 @@ export function ReaderPage() {
               </button>
             </div>
 
+            {/* TTS controls — above the text so no scrolling is needed to play */}
+            <div className="mb-4">
+              <p className="label">🔊 朗读</p>
+              {ttsError && (
+                <p role="alert" className="mb-2 rounded-xl bg-blush/20 px-3 py-2 text-sm">{ttsError}</p>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {LANGS.map((l) => {
+                  const isThisLoading = ttsLoading?.blockId === selected.id && ttsLoading?.lang === l;
+                  const isThisPlaying = playing?.blockId === selected.id && playing?.lang === l;
+                  return (
+                    <button
+                      key={l}
+                      type="button"
+                      onClick={() => playTts(selected, l)}
+                      disabled={ttsLoading !== null}
+                      aria-pressed={isThisPlaying}
+                      className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition active:scale-97 disabled:opacity-60 ${
+                        isThisPlaying ? 'bg-apricot text-white shadow' : 'btn-soft'
+                      }`}
+                    >
+                      {isThisLoading ? <Spinner size={16} /> : <span aria-hidden="true">{isThisPlaying ? '⏸' : '▶'}</span>}
+                      {LANGUAGE_LABELS[l]}
+                    </button>
+                  );
+                })}
+              </div>
+              <p className="mt-2 text-xs text-cocoa-soft">音频生成后会自动缓存，下次直接播放。</p>
+            </div>
+
             <p className="text-lg font-semibold leading-relaxed">{primaryText || selected.originalText}</p>
             {lang === 'ja' && selected.readingText && (
               <p className="mt-1 text-sm text-sky-dark">{selected.readingText}</p>
@@ -361,35 +391,6 @@ export function ReaderPage() {
               )}
             </div>
 
-            {/* TTS controls */}
-            <div className="mt-4">
-              <p className="label">🔊 朗读</p>
-              {ttsError && (
-                <p role="alert" className="mb-2 rounded-xl bg-blush/20 px-3 py-2 text-sm">{ttsError}</p>
-              )}
-              <div className="flex flex-wrap gap-2">
-                {LANGS.map((l) => {
-                  const isThisLoading = ttsLoading?.blockId === selected.id && ttsLoading?.lang === l;
-                  const isThisPlaying = playing?.blockId === selected.id && playing?.lang === l;
-                  return (
-                    <button
-                      key={l}
-                      type="button"
-                      onClick={() => playTts(selected, l)}
-                      disabled={ttsLoading !== null}
-                      aria-pressed={isThisPlaying}
-                      className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-semibold transition active:scale-97 disabled:opacity-60 ${
-                        isThisPlaying ? 'bg-apricot text-white shadow' : 'btn-soft'
-                      }`}
-                    >
-                      {isThisLoading ? <Spinner size={16} /> : <span aria-hidden="true">{isThisPlaying ? '⏸' : '▶'}</span>}
-                      {LANGUAGE_LABELS[l]}
-                    </button>
-                  );
-                })}
-              </div>
-              <p className="mt-2 text-xs text-cocoa-soft">音频生成后会自动缓存，下次直接播放。</p>
-            </div>
           </div>
         </div>
       )}
