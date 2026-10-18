@@ -70,6 +70,19 @@ export function verifyPassword(password: string, stored: string): boolean {
 }
 
 /**
+ * Constant-time plaintext password comparison, for AUTH_PASSWORD.
+ * Used only when the deployment sets a plaintext password instead of a
+ * scrypt hash. The password is not secret to the server, but this avoids
+ * leaking prefix information through timing.
+ */
+export function verifyPlaintextPassword(provided: string, expected: string): boolean {
+  const a = Buffer.from(provided, 'utf8');
+  const b = Buffer.from(expected, 'utf8');
+  if (a.length !== b.length) return false;
+  return timingSafeEqual(a, b);
+}
+
+/**
  * Constant-time username comparison. The username is not secret, but this
  * avoids leaking prefix information through timing.
  */

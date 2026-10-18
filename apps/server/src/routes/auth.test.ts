@@ -240,4 +240,47 @@ describe('POST /auth/change-password', () => {
     assert.ok(cookie);
     assert.equal((await login(app, 'wrong-pass', 'change-fallback')).status, 401);
   });
+
+  it('login works with AUTH_PASSWORD (plaintext) when no hash is set', async () => {
+    const env = {
+      AUTH_USERNAME: 'testuser',
+      AUTH_PASSWORD: 'plain-pass-013',
+      SESSION_COOKIE_NAME: COOKIE_NAME,
+      SESSION_TTL_HOURS: 720,
+      COOKIE_SECURE: false,
+      NODE_ENV: 'development',
+      TTS_PROVIDER: 'kokoro',
+    };
+    const app = authRoutes(stubDeps(env));
+    const { status, cookie } = await login(app, 'plain-pass-013', 'change-plain');
+    assert.equal(status, 200);
+    assert.ok(cookie);
+    assert.equal((await login(app, 'wrong-pass', 'change-plain')).status, 401);
+  });
+
+  it('settings override wins over AUTH_PASSWORD (plaintext)', async () => {
+    const env = {
+      AUTH_USERNAME: 'testuser',
+      AUTH_PASSWORD: 'plain-pass-014',
+      SESSION_COOKIE_NAME: COOKIE_NAME,
+      SESSION_TTL_HOURS: 720,
+      COOKIE_SECURE: false,
+      NODE_ENV: 'development',
+      TTS_PROVIDER: 'kokoro',
+    };
+    const app = authRoutes(stubDeps(env));
+    // Log in via the plaintext password, then change it via settings.
+    const { cookie } = await login(app, 'plain-pass-014', 'change-plain-override');
+    assert.ok(cookie);
+    const res = await changePassword(
+      app,
+      { currentPassword: 'plain-pass-014', newPassword: 'new-plain-015', confirmPassword: 'new-plain-015' },
+      'change-plain-override',
+      cookie,
+    );
+    assert.equal(res.status, 200);
+    // The settings hash now wins: old plaintext no longer works, new does.
+    assert.equal((await login(app, 'plain-pass-014', 'change-plain-override-check')).status, 401);
+    assert.equal((await login(app, 'new-plain-015', 'change-plain-override-check')).status, 200);
+  });
 });

@@ -6,7 +6,7 @@ import {
   LoginRequestSchema,
 } from '@ehon2/shared';
 import type { Deps } from '../deps.js';
-import { hashPassword, verifyPassword, verifyUsername } from '../auth/password.js';
+import { hashPassword, verifyPassword, verifyPlaintextPassword, verifyUsername } from '../auth/password.js';
 import { getSessionFromRequest, issueSession, revokeSession } from '../auth/session.js';
 import { getSetting, setSetting } from '../db/settings.js';
 import { deleteAllSessions } from '../db/sessions.js';
@@ -17,11 +17,18 @@ import { LoginLimiter, clientKeyFromRequest } from '../auth/loginLimiter.js';
 const loginLimiter = new LoginLimiter();
 
 /**
- * Resolve the effective password hash: the settings-page override wins,
- * falling back to the environment variable when no override has been saved.
+ * Verify a login / current-password guess against the effective credential.
+ * Precedence: settings-page override (scrypt hash) wins, then the
+ * AUTH_PASSWORD plaintext env var, then the AUTH_PASSWORD_HASH env var.
+ * Returns false when no credential is configured (should not happen:
+ * env validation requires at least one of the two env vars).
  */
-function currentPasswordHash(env: Deps['env']): string {
-  return getSetting(AUTH_PASSWORD_HASH_SETTING_KEY) ?? env.AUTH_PASSWORD_HASH;
+function verifyLoginPassword(password: string, env: Deps['env']): boolean {
+  const override = getSetting(AUTH_PASSWORD_HASH_SETTING_KEY);
+  if (override) return verifyPassword(password, override);
+  if (env.AUTH_PASSWORD) return verifyPlaintextPassword(password, env.AUTH_PASSWORD);
+  if (env.AUTH_PASSWORD_HASH) return verifyPassword(password, env.AUTH_PASSWORD_HASH);
+  return false;
 }
 
 export function authRoutes(deps: Deps): Hono {
@@ -45,7 +52,7 @@ export function authRoutes(deps: Deps): Hono {
     }
     const { username, password } = parsed.data;
     const usernameOk = verifyUsername(username, env.AUTH_USERNAME);
-    const passwordOk = verifyPassword(password, currentPasswordHash(env));
+    const passwordOk = verifyLoginPassword(password, env);
     if (!usernameOk || !passwordOk) {
       // Same response either way — do not reveal which field was wrong.
       loginLimiter.recordFailure(clientKey);
@@ -97,7 +104,7 @@ export function authRoutes(deps: Deps): Hono {
       return fail(c, 401, ErrorCodes.UNAUTHENTICATED, 'Authentication required.');
     }
     const { currentPassword, newPassword } = parsed.data;
-    if (!verifyPassword(currentPassword, currentPasswordHash(env))) {
+    if (!verifyLoginPassword(currentPassword, env)) {
       loginLimiter.recordFailure(clientKey);
       return fail(c, 401, ErrorCodes.INVALID_CREDENTIALS, 'Current password is incorrect.');
     }

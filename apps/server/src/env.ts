@@ -18,7 +18,12 @@ const EnvSchema = z.object({
   // ---- required secrets ----
   OPENAI_API_KEY: z.string().min(1, 'OPENAI_API_KEY is required'),
   AUTH_USERNAME: z.string().min(1, 'AUTH_USERNAME is required'),
-  AUTH_PASSWORD_HASH: z.string().min(1, 'AUTH_PASSWORD_HASH is required'),
+  // Login password: set either the scrypt hash or the plaintext password.
+  // AUTH_PASSWORD (plaintext) is the simpler option — no hash generation
+  // needed. AUTH_PASSWORD_HASH is kept for deployments that prefer to
+  // store only a hash in the environment.
+  AUTH_PASSWORD_HASH: z.string().min(1).optional(),
+  AUTH_PASSWORD: z.string().min(1).optional(),
   SESSION_SECRET: z.string().min(16, 'SESSION_SECRET must be at least 16 characters'),
 
   // ---- session ----
@@ -91,6 +96,14 @@ const EnvSchema = z.object({
     .enum(['true', 'false'])
     .optional()
     .transform((v) => (v === undefined ? undefined : v === 'true')),
+}).superRefine((data, ctx) => {
+  if (!data.AUTH_PASSWORD_HASH && !data.AUTH_PASSWORD) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['AUTH_PASSWORD_HASH'],
+      message: 'Set AUTH_PASSWORD_HASH or AUTH_PASSWORD (at least one is required).',
+    });
+  }
 });
 
 export type AppEnv = z.infer<typeof EnvSchema>;
